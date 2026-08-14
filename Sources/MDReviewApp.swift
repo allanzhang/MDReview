@@ -23,26 +23,48 @@ struct MDReviewApp: App {
 private struct AppCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("Open…") { postMenuAction(.openPanel) }
+            Button { postMenuAction(.openPanel) } label: {
+                Label("Open…", systemImage: "folder")
+            }
                 .keyboardShortcut("o", modifiers: .command)
-            Button("Open in External Editor…") { postMenuAction(.openInExternalEditor) }
+            Button { postMenuAction(.openInExternalEditor) } label: {
+                Label("Open in External Editor…", systemImage: "pencil.and.outline")
+            }
                 .keyboardShortcut("e", modifiers: .command)
             Divider()
-            Menu("Export") {
-                Button("Export as HTML…") { postMenuAction(.exportHTML) }
-                Button("Export as PDF…") { postMenuAction(.exportPDF) }
+            Menu {
+                Button { postMenuAction(.exportHTML) } label: {
+                    Label("Export as HTML…", systemImage: "doc.richtext")
+                }
+                Button { postMenuAction(.exportPDF) } label: {
+                    Label("Export as PDF…", systemImage: "doc")
+                }
+            } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
             }
         }
         CommandGroup(after: .toolbar) {
-            Button("Toggle Sidebar") { postMenuAction(.toggleSidebar) }
+            Button { postMenuAction(.toggleSidebar) } label: {
+                Label("Toggle Sidebar", systemImage: "sidebar.left")
+            }
                 .keyboardShortcut("s", modifiers: [.command, .control])
             Divider()
-            Button("Toggle Source / Rendered") { postMenuAction(.toggleSource) }
+            Button { postMenuAction(.toggleSource) } label: {
+                Label("Toggle Source / Rendered", systemImage: "doc.richtext")
+            }
             Divider()
-            Menu("Appearance") {
-                Button("Follow System") { postMenuAction(.appearanceSystem) }
-                Button("Light") { postMenuAction(.appearanceLight) }
-                Button("Dark") { postMenuAction(.appearanceDark) }
+            Menu {
+                Button { postMenuAction(.appearanceSystem) } label: {
+                    Label("Follow System", systemImage: "circle.lefthalf.filled")
+                }
+                Button { postMenuAction(.appearanceLight) } label: {
+                    Label("Light", systemImage: "sun.max")
+                }
+                Button { postMenuAction(.appearanceDark) } label: {
+                    Label("Dark", systemImage: "moon")
+                }
+            } label: {
+                Label("Appearance", systemImage: "circle.lefthalf.filled")
             }
         }
     }
