@@ -7,13 +7,20 @@ import SwiftUI
     override var canBecomeMain: Bool { true }
 }
 
-/// 浮动搜索面板：点击搜索按钮时，在 Open 与 Search 按钮之间居中悬空浮出一个
-/// 无边框玻璃搜索框（Spotlight 式）。原窗口布局完全不变，面板是独立浮层。
+/// 浮动搜索面板：点击搜索按钮时，在 Open 与 Search 按钮之间悬空浮出一个
+/// 无边框玻璃搜索框（Spotlight 式）。原窗口布局完全不变。
+///
+/// 实现要点（历史教训）：
+/// - 面板作为【子窗口】挂到主窗口（addChildWindow）——系统自动跟随父窗口移动/缩放，
+///   彻底解决此前 didMoveNotification 手动同步的「拖动不同步、卡顿」问题。
+/// - 子窗口 setFrameOrigin 用的是【窗口坐标】（相对父窗口，左下原点），与按钮的
+///   convert(bounds, to: nil) 同坐标系，无需 convertToScreen（屏幕坐标是飞出 bug 的根源）。
+/// - 垂直：面板在工具栏条内居中且上下留白（悬空感），不再贴窗口顶。
 @MainActor final class SearchPanelController {
     static let shared = SearchPanelController()
 
     private var panel: NSPanel?
-    private weak var observedWindow: NSWindow?
+    private weak var parentWindow: NSWindow?
 
     private init() {}
 
@@ -27,7 +34,6 @@ import SwiftUI
         }
         guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
 
-        let height: CGFloat = 52
         let bar = SearchBar(renderer: renderer, text: text, onClose: onClose)
         let host = NSHostingView(rootView: bar)
         // 透明 + 圆角裁剪（在宿主层裁圆角，保证圆角外透出背后内容）
@@ -37,7 +43,7 @@ import SwiftUI
         host.layer?.backgroundColor = NSColor.clear.cgColor
 
         let panel = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: height),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 40),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -51,94 +57,63 @@ import SwiftUI
         panel.contentView = host
 
         position(panel, relativeTo: window)
+        // 子窗口：自动跟随父窗口移动/缩放，无需手动同步
+        window.addChildWindow(panel, ordered: .above)
         panel.makeKeyAndOrderFront(nil)
         self.panel = panel
-
-        // 跟随主窗口移动/缩放
-        observe(window)
+        self.parentWindow = window
     }
 
     func hide() {
         panel?.orderOut(nil)
-        if let w = observedWindow {
-            NotificationCenter.default.removeObserver(self, name: NSWindow.didMoveNotification, object: w)
-            NotificationCenter.default.removeObserver(self, name: NSWindow.didResizeNotification, object: w)
+        if let panel, let parent = parentWindow {
+            parent.removeChildWindow(panel)
         }
-        observedWindow = nil
+        panel = nil
+        parentWindow = nil
     }
 
-    /// 面板定位与尺寸：
-    /// - 高度 = 工具栏区域总高（窗口 frame 高 − 内容布局高 = 标题栏+工具栏，
-    ///   macOS 26 Liquid Glass 下即按钮所在玻璃背景条的实际高度）
-    /// - 宽度 = Open/Search 按钮水平距离的 70%
-    /// - 水平 + 垂直双居中于两按钮中点（贴工具栏）
+    /// 面板定位与尺寸（全部用【窗口坐标】，与按钮 convert(to: nil) 同坐标系）：
+    /// - 高度 = 工具栏区域总高 − 12（上下各留 6pt 悬空，不贴顶）
+    /// - 宽度 = Open/Search 按钮水平距离的 50%（下限 220）
+    /// - 水平居中于两按钮中点；垂直居中于工具栏条（留白悬空）
     /// 按钮识别：toolTip（.help 设置）与 label 都查——SwiftUI toolbar item 的 label 常为空。
-    /// 锚点不可用/异常时回退窗口顶部居中。
     private func position(_ panel: NSPanel, relativeTo window: NSWindow) {
-        var openFrame: NSRect?
-        var searchFrame: NSRect?
+        var openX: CGFloat?
+        var searchX: CGFloat?
 
         if let toolbar = window.toolbar {
             for item in toolbar.items {
-                guard let view = item.view, let vw = view.window else { continue }
+                guard let view = item.view else { continue }
                 let id = (item.label + " " + (view.toolTip ?? "")).lowercased()
-                // ⚠️ view.convert(bounds, to: nil) 得到的是【窗口坐标】（原点=窗口左下角），
-                // 必须再经 convertToScreen 转成【屏幕坐标】才能与 setFrameOrigin 匹配。
-                let r = vw.convertToScreen(view.convert(view.bounds, to: nil))
+                // convert(bounds, to: nil) = 窗口坐标（左下原点），与子窗口 setFrameOrigin 一致
+                let r = view.convert(view.bounds, to: nil)
                 if id.contains("open") {
-                    openFrame = r
+                    openX = r.midX
                 } else if id.contains("search") {
-                    searchFrame = r
+                    searchX = r.midX
                 }
             }
         }
 
+        let chromeH = max(32, window.frame.height - window.contentLayoutRect.height)
+        let height = chromeH - 12
         let width: CGFloat
-        let height: CGFloat
         let x: CGFloat
         let y: CGFloat
 
-        if let o = openFrame, let s = searchFrame {
-            // 高度 = 工具栏区域总高（按钮背景矩形实际高度）
-            let chromeH = max(28, window.frame.height - window.contentLayoutRect.height)
-            height = chromeH
-            // 宽度 = 两按钮水平间距的 50%（下限 220 保证可输入）
-            width = max(220, (s.midX - o.midX) * 0.5)
-            // 水平：居中于两按钮中点
-            x = (o.midX + s.midX) / 2 - width / 2
-            // 垂直：以工具栏条为基准居中（用按钮中点会因按钮偏上而顶出窗口上沿）
-            y = window.frame.maxY - chromeH / 2 - height / 2
+        if let openX, let searchX {
+            width = max(220, (searchX - openX) * 0.5)
+            x = (openX + searchX) / 2 - width / 2
         } else {
-            // 回退：窗口顶部居中（屏幕坐标，永不飞出）
-            let wf = window.frame
-            height = 30
-            width = max(220, min(wf.width * 0.4, 520))
-            x = wf.midX - width / 2
-            y = wf.maxY - height - 8
+            // 回退：窗口水平居中，工具栏条底部对齐
+            width = max(220, min(window.frame.width * 0.4, 520))
+            x = (window.frame.width - width) / 2
         }
+        // 垂直：工具栏条内居中，上下各留 (chromeH - height)/2 = 6pt
+        y = window.contentLayoutRect.height + (chromeH - height) / 2
 
         panel.setContentSize(NSSize(width: width, height: height))
         panel.setFrameOrigin(NSPoint(x: x, y: y))
-    }
-
-    private func observe(_ window: NSWindow) {
-        if let w = observedWindow, w !== window {
-            NotificationCenter.default.removeObserver(self, name: NSWindow.didMoveNotification, object: w)
-            NotificationCenter.default.removeObserver(self, name: NSWindow.didResizeNotification, object: w)
-        }
-        observedWindow = window
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(windowFrameChanged(_:)),
-            name: NSWindow.didMoveNotification, object: window
-        )
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(windowFrameChanged(_:)),
-            name: NSWindow.didResizeNotification, object: window
-        )
-    }
-
-    @objc private func windowFrameChanged(_ note: Notification) {
-        guard let window = note.object as? NSWindow, let panel, isVisible else { return }
-        position(panel, relativeTo: window)
     }
 }
