@@ -6,6 +6,16 @@ enum AppearanceMode: String {
     case system = "system"
     case light = "light"
     case dark = "dark"
+
+    /// 映射到 SwiftUI 外观（nil = 跟随系统）。用于让整个窗口（侧栏/工具栏/搜索条）
+    /// 与 WebView 内容在手动切换时保持一致，避免「内容变暗、外壳仍亮」的割裂。
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
 }
 
 /// 全局文档状态：当前打开的 .md、原文、最近文件列表、大纲显隐。

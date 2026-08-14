@@ -9,6 +9,9 @@ struct MDReviewApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(doc)
+                // 外观联动：手动切亮/暗时整个窗口（侧栏/工具栏/搜索条）跟随，
+                // system 模式传 nil 跟随系统；WebView 内容由 applyAppearance 同步
+                .preferredColorScheme(doc.appearance.colorScheme)
         }
         .windowResizability(.contentSize)
     }

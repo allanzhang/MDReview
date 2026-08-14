@@ -13,6 +13,8 @@ struct ContentView: View {
     @State private var showSearch = false
     /// 搜索防抖（大文档 TreeWalker 全文遍历昂贵，输入停顿 250ms 才执行）。
     @State private var searchDebounce: DispatchWorkItem?
+    /// 拖拽悬停状态（用于高亮反馈）。
+    @State private var isDropTargeted = false
 
     var body: some View {
         NavigationSplitView(columnVisibility: $doc.columnVisibility) {
@@ -53,15 +55,28 @@ struct ContentView: View {
     @ViewBuilder
     private var detailContent: some View {
         ZStack(alignment: .top) {
+            // WebView 始终保留实例（NSViewRepresentable 首次 make 后复用），空状态覆盖其上
             ReaderWebView(renderer: renderer)
-                .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
                     handleDrop(providers)
                 }
+                .overlay {
+                    // 拖拽视觉反馈：文件悬停时显示 accent 边框
+                    if isDropTargeted {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.accentColor, lineWidth: 2)
+                            .padding(6)
+                    }
+                }
+            // 无文档空状态引导
+            if doc.url == nil {
+                EmptyStateView()
+            }
             // 源码态：只读覆盖在 WebView 之上，保留渲染状态不卸载
-            if doc.showSource {
+            if doc.showSource && doc.url != nil {
                 SourceView(text: doc.rawText)
             }
-            if showSearch {
+            if showSearch && doc.url != nil {
                 SearchBar(renderer: renderer,
                           text: $searchText,
                           onClose: {
@@ -78,6 +93,9 @@ struct ContentView: View {
             searchDebounce = item
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: item)
         }
+        // 窗口标题：显示当前文件名与所在目录（无文档时显示 App 名）
+        .navigationTitle(doc.url?.lastPathComponent ?? "MDReview")
+        .navigationSubtitle(doc.url?.deletingLastPathComponent().path ?? "")
         // 折叠/展开侧边栏的按钮放在 Content Panel 的工具栏，符合用户的交互预期
         .toolbar { detailToolbar }
     }
@@ -101,7 +119,7 @@ struct ContentView: View {
             Button { showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }
                 .help("Search in Document")
         }
-        // 外观切换：跟随系统 / 强制亮 / 强制暗（即时生效不重载）
+        // 外观切换：跟随系统 / 强制亮 / 强制暗（即时生效不重载，整窗联动见 MDReviewApp）
         ToolbarItem(placement: .automatic) {
             Menu {
                 Button {
@@ -127,19 +145,27 @@ struct ContentView: View {
             }
             .help("Appearance")
         }
+        // 次级功能收纳进 More 菜单，保持工具栏克制（源码对照 / 外部编辑器）
         ToolbarItem(placement: .automatic) {
-            Button {
-                withAnimation { doc.showSource.toggle() }
-            } label: {
-                Label("Source", systemImage: doc.showSource ? "doc.richtext" : "doc.plaintext")
-            }
-            .help(doc.showSource ? "Switch to Rendered View" : "Switch to Source View")
-        }
-        ToolbarItem(placement: .automatic) {
-            Button { openInExternalEditor() } label: { Label("External Editor", systemImage: "pencil.and.outline") }
-                .help("Open in External Editor (Cmd+E)")
+            Menu {
+                Button {
+                    withAnimation { doc.showSource.toggle() }
+                } label: {
+                    Label(doc.showSource ? "Rendered View" : "Source View",
+                          systemImage: doc.showSource ? "doc.richtext" : "doc.plaintext")
+                }
+                Divider()
+                Button {
+                    openInExternalEditor()
+                } label: {
+                    Label("Open in External Editor", systemImage: "pencil.and.outline")
+                }
                 .keyboardShortcut("e", modifiers: .command)
                 .disabled(doc.url == nil)
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
+            }
+            .help("More")
         }
         ToolbarItem(placement: .automatic) {
             Menu {
@@ -261,6 +287,27 @@ struct ContentView: View {
     }
 }
 
+/// 无文档时的空状态引导页：提示打开/拖拽方式，克制不喧宾夺主。
+struct EmptyStateView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "doc.richtext")
+                .font(.system(size: 52))
+                .foregroundStyle(.tertiary)
+            Text("MDReview")
+                .font(.title2)
+                .fontWeight(.medium)
+            Text("Open a Markdown file or drop one here")
+                .foregroundStyle(.secondary)
+            Text("Toolbar  Open  ·  Drag & Drop  ·  Recent")
+                .font(.callout)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .textBackgroundColor))
+    }
+}
+
 /// 源码视图：只读展示当前 Markdown 原文。
 /// 用 NSTextView（AppKit 文本系统）承载而非 SwiftUI Text——后者渲染 MB 级大文本时
 /// 布局开销极高，是「点击源码按钮卡顿」的根因。
@@ -311,6 +358,8 @@ struct SearchBar: View {
     @ObservedObject var renderer: MarkdownRenderer
     @Binding var text: String
     let onClose: () -> Void
+    /// 搜索条出现即聚焦输入框，Cmd 交互直接输入。
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -319,6 +368,8 @@ struct SearchBar: View {
             TextField("Search", text: $text)
                 .textFieldStyle(.plain)
                 .frame(minWidth: 220)
+                .focused($isFocused)
+                .onAppear { isFocused = true }
             if renderer.searchCount > 0 {
                 Text("\(renderer.searchCurrent)/\(renderer.searchCount)")
                     .foregroundStyle(.secondary)
