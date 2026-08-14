@@ -82,9 +82,8 @@ struct ContentView: View {
     private var detailToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
             Button {
-                withAnimation {
-                    doc.columnVisibility = (doc.columnVisibility == .all) ? .detailOnly : .all
-                }
+                // 无动画直接切换：NavigationSplitView 列动画会驱动 detail 区 WKWebView 连续 resize 重排，长文档下明显卡顿
+                doc.columnVisibility = (doc.columnVisibility == .all) ? .detailOnly : .all
             } label: {
                 Label("侧边栏", systemImage: doc.columnVisibility == .all ? "sidebar.left" : "sidebar.right")
             }

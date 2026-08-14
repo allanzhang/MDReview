@@ -69,14 +69,18 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             guard let self else { return }
             if let arr = result as? [[String: Any]] {
                 let heads = parseOutline(arr)
-                DispatchQueue.main.async { self.outline = heads }
+                DispatchQueue.main.async {
+                    // 判等写入：避免与 postMessage 通道重复赋值触发冗余视图更新
+                    guard self.outline != heads else { return }
+                    self.outline = heads
+                }
             }
         }
     }
 
     func scrollTo(_ id: String) {
         guard pageLoaded else { return }
-        webView.evaluateJavaScript("scrollToHeading('\(id)')", completionHandler: nil)
+        webView.evaluateJavaScript("scrollToHeading(\(Self.jsonString(for: id)))", completionHandler: nil)
     }
 
     func search(_ term: String) {
@@ -154,7 +158,9 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// 滚动 / 搜索 / 正则转义等工具函数（不含渲染，渲染见 jsRenderInline）。
     /// 使用原始字符串保留正则中的反斜杠。
     private static let jsFunctions = #"""
-    window.scrollToHeading = function(id){ var e=document.getElementById(id); if(e){ e.scrollIntoView({behavior:'smooth', block:'start'}); } };
+    // 大纲点击跳转：用瞬时滚动（不用 smooth）。smooth 动画期间持续触发 scroll 事件，
+    // 每帧都跑 __onScroll 的布局查询 + SwiftUI 反向高亮更新，长文档下是卡顿主因之一。
+    window.scrollToHeading = function(id){ var e=document.getElementById(id); if(e){ e.scrollIntoView({block:'start'}); } };
     window.__marks = []; window.__searchIdx = -1;
     window.__clearSearch = function(){
       var cs = document.querySelectorAll('mark.srch');
@@ -196,14 +202,22 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       return window.__searchIdx + 1;
     };
     // 双向同步：根据滚动位置计算当前可视章节，回传 heading id 供大纲反向高亮。
+    // 性能要点：
+    // 1. 标题列表在渲染时缓存到 window.__heads，滚动时不再 querySelectorAll（DOM 查询昂贵）。
+    // 2. 用二分查找「最后一个 top <= 100 的标题」（文档顺序 = 纵向位置单调递增），
+    //    把每帧的 getBoundingClientRect 布局查询从 O(N) 降到 O(log N)，消除长文档 layout thrashing。
+    // 3. 仅在标题真正切换时 postMessage，避免高频消息打满主线程。
     window.__lastActive = null;
     window.__onScroll = function(){
-      var heads = document.querySelectorAll('#content h1,#content h2,#content h3,#content h4,#content h5,#content h6');
-      var active = null;
-      for (var i = 0; i < heads.length; i++){
-        if(heads[i].getBoundingClientRect().top <= 100){ active = heads[i].id; } else { break; }
+      var heads = window.__heads;
+      if(!heads || !heads.length){ return; }
+      var lo = 0, hi = heads.length - 1, idx = -1;
+      while(lo <= hi){
+        var mid = (lo + hi) >> 1;
+        if(heads[mid].getBoundingClientRect().top <= 100){ idx = mid; lo = mid + 1; }
+        else { hi = mid - 1; }
       }
-      if(!active && heads.length){ active = heads[0].id; }
+      var active = idx >= 0 ? heads[idx].id : heads[0].id;
       if(active && active !== window.__lastActive){
         window.__lastActive = active;
         if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.active){
@@ -231,6 +245,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             var heads = el.querySelectorAll('h1,h2,h3,h4,h5,h6');
             var outline = [];
             heads.forEach(function(h, i){ if(!h.id){ h.id = 'h-' + i; } outline.push({level: parseInt(h.tagName.substring(1)), text: h.textContent, id: h.id}); });
+            // 缓存标题列表供 __onScroll 二分查找使用（滚动时不再重复 querySelectorAll）。
+            window.__heads = Array.prototype.slice.call(heads);
             if(window.renderMathInElement){ try { renderMathInElement(el, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false}); } catch(e){} }
             window.__outline = outline;
             if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.outline){
@@ -262,12 +278,16 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
                 heads = []
             }
             Task { @MainActor [weak self] in
-                self?.renderer?.outline = heads
+                // 判等写入：双通道（postMessage + didFinish 兜底）可能重复赋值，
+                // @Published 不判等，相同值 set 也会触发 objectWillChange 引发整树重算。
+                guard let r = self?.renderer, r.outline != heads else { return }
+                r.outline = heads
             }
         } else if message.name == "active" {
             guard let id = message.body as? String else { return }
             Task { @MainActor [weak self] in
-                self?.renderer?.activeHeadingID = id
+                guard let r = self?.renderer, r.activeHeadingID != id else { return }
+                r.activeHeadingID = id
             }
         }
     }
