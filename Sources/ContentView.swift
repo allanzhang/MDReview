@@ -165,7 +165,8 @@ struct ContentView: View {
                 .keyboardShortcut("f", modifiers: .command)
                 .help("Search in Document")
         }
-        // 外观切换：单按钮，太阳/月亮图标高亮代表当前状态。
+        // 外观切换：单按钮，图标表示点击后切换的方向——当前亮显月亮（点击切暗）、
+        // 当前暗显太阳（点击切亮）。手动覆盖时 accent 圆高亮。
         // System（默认）→ 点击临时覆盖为相反外观 → 再点回到 System（不持久化）
         ToolbarItem(placement: .automatic) {
             Button {
@@ -183,7 +184,7 @@ struct ContentView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .help(isManualAppearance ? "Override active — click to follow system" : "Follow system — click to override")
+            .help(isDarkEffective ? "Switch to Light" : "Switch to Dark")
         }
         ToolbarItem(placement: .automatic) {
             Menu {
@@ -206,8 +207,8 @@ struct ContentView: View {
         if doc.appearance == .system { return systemScheme == .dark }
         return doc.appearance == .dark
     }
-    /// 外观按钮图标：暗 → 月亮，亮 → 太阳。
-    private var appearanceIconName: String { isDarkEffective ? "moon" : "sun.max" }
+    /// 外观按钮图标：当前亮 → 月亮（点击切暗），当前暗 → 太阳（点击切亮）。
+    private var appearanceIconName: String { isDarkEffective ? "sun.max" : "moon" }
 
     private func renderCurrent() {
         guard let url = doc.url else { return }
