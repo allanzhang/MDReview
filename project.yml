@@ -1,0 +1,46 @@
+name: MDReview
+options:
+  bundleIdPrefix: com.doubleeagle
+  deploymentTarget:
+    macOS: "14.0"
+targets:
+  MDReview:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+        excludes:
+          - Info.plist
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleName: MDReview
+        CFBundleDisplayName: MDReview
+        CFBundleVersion: "1"
+        CFBundleShortVersionString: "1.0"
+        LSMinimumSystemVersion: "14.0"
+        NSPrincipalClass: NSApplication
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Markdown Document
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - net.daringfireball.markdown
+              - public.plain-text
+            CFBundleTypeExtensions:
+              - md
+              - markdown
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        PRODUCT_NAME: MDReview
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: true
+        ENABLE_PREVIEWS: NO
+schemes:
+  MDReview:
+    build:
+      targets:
+        MDReview: all
+    run:
+      target: MDReview

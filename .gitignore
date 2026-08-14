@@ -1,0 +1,26 @@
+# ===== 构建产物（不提交）=====
+MDReview.app/
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+xcuserdata/
+
+# ===== Xcode 用户态文件 =====
+*.xcuserstate
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcworkspace/xcuserdata/
+
+# ===== WorkBuddy 项目内部数据（AI 记忆/笔记，非源码）=====
+.workbuddy/
+
+# ===== 系统文件 =====
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# ===== 日志 =====
+*.log
