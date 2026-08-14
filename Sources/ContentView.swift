@@ -3,8 +3,8 @@ import AppKit
 import UniformTypeIdentifiers
 
 /// 主界面。renderer 用 @State 持有但不观察：@State 对引用类型仅管理生命周期，
-/// 其 @Published 变化不会触发 ContentView 整树重算（activeHeadingID 滚动高频更新是
-/// 之前「点任何按钮都卡」的根因）。需要响应 renderer 状态的子视图各自 @ObservedObject。
+/// 其 @Published 变化不会触发 ContentView 整树重算。需要响应 renderer 状态的
+/// 子视图各自 @ObservedObject。
 @MainActor
 struct ContentView: View {
     @EnvironmentObject var doc: DocState
@@ -24,8 +24,7 @@ struct ContentView: View {
             detailContent
         }
         .navigationSplitViewStyle(.balanced)
-        // 工具栏下边界层次：light 下系统 Liquid Glass 与内容区几乎同色。
-        // 用顶部柔和渐变阴影（工具栏向下投射的光晕）而非 1px 硬线，层次更自然；
+        // 工具栏下边界层次：light 下用顶部柔和渐变阴影（工具栏向下投射的光晕）增强层次；
         // dark 系统自带边界清晰，保持不动
         .overlay(alignment: .top) {
             if systemScheme != .dark {
@@ -47,7 +46,7 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebar: some View {
         VStack(spacing: 0) {
-            // 视图切换：两个大按钮（图标 + 文字），替代原 segmented Picker（去掉 View 标签、拉宽拉长）
+            // 视图切换：两个大按钮（图标 + 文字）
             HStack(spacing: 4) {
                 SidebarSegment(title: "Outline", systemImage: "list.bullet",
                                isSelected: doc.showOutline) { doc.showOutline = true }
@@ -225,7 +224,7 @@ struct ContentView: View {
     private func renderCurrent() {
         guard let url = doc.url else { return }
         // 整体重载页面（render 内部已重置 pageLoaded），高亮随之清空，故直接复位计数即可。
-        // 注意：不要在 loadHTMLString 完成前调用 evaluateJavaScript（如旧版 search("")），
+        // 注意：不要在 loadHTMLString 完成前调用 evaluateJavaScript，
         // 否则页面未就绪会触发 "Request to run JavaScript failed" 持续报错。
         renderer.searchCount = 0
         renderer.searchCurrent = 0
@@ -387,7 +386,7 @@ private struct SidebarSegment: View {
 
 /// 源码视图：只读展示当前 Markdown 原文。
 /// 用 NSTextView（AppKit 文本系统）承载而非 SwiftUI Text——后者渲染 MB 级大文本时
-/// 布局开销极高，是「点击源码按钮卡顿」的根因。
+/// 布局开销极高。
 struct SourceView: View {
     let text: String
 
@@ -459,7 +458,7 @@ struct SearchBar: View {
 
     var body: some View {
         // 高度自适应：面板高度 = 按钮背景高度（可能 28~56 不等），
-        // 不再写死垂直 padding，行内容垂直居中于面板内，矮面板也不会被裁剪。
+        // 行内容垂直居中于面板内，矮面板也不会被裁剪。
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14, weight: .medium))
@@ -478,8 +477,7 @@ struct SearchBar: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-            // 箭头按钮：图标小、裸点击区域只有图标本身大小基本点不到，给 label 撑大
-            // 固定 frame + contentShape，26x26 可点区域（图标居中）。
+            // 箭头按钮：label 撑大固定 frame + contentShape，26x26 可点区域（图标居中）。
             Button { renderer.searchPrev() } label: {
                 Image(systemName: "chevron.up")
                     .font(.system(size: 12, weight: .semibold))
@@ -510,7 +508,7 @@ struct SearchBar: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                // dark 下 0.10 太淡、与模糊背景融为一体，提到 0.24 让边界清晰
+                // dark 下描边更亮（0.24），避免与模糊背景融为一体
                 .stroke(scheme == .dark ? Color.white.opacity(0.24) : Color.black.opacity(0.16), lineWidth: 1)
         }
         .shadow(color: .black.opacity(scheme == .dark ? 0.5 : 0.25), radius: 22, y: 10)

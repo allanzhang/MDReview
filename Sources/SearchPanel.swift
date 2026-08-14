@@ -10,13 +10,13 @@ import SwiftUI
 /// 浮动搜索面板：点击搜索按钮时，在 Open 与 Search 按钮之间悬空浮出一个
 /// 无边框玻璃搜索框（Spotlight 式）。原窗口布局完全不变，面板是独立浮层。
 ///
-/// 实现要点（历史教训）：
+/// 实现要点：
 /// - **childWindow（AppKit 主流做法）**：`addChildWindow(panel, ordered: .above)`，
 ///   子窗口随父窗口移动**原生同步**，拖动无需任何监听/定时器。
 ///   子窗口**不设独立层级**（`level`/`isFloatingPanel` 是独立浮层用法，child 应跟随父窗口；
-///   macOS 26 上 child+borderless+独立层级偶发不显示——上一版失败的元凶之一）。
+///   child+borderless+独立层级在 macOS 26 上偶发不显示）。
 /// - 定位统一用【屏幕坐标】：按钮 convert(bounds, to: nil) 是窗口坐标，必须经
-///   convertToScreen 转换后 setFrameOrigin（单位混用是"飞到窗外"的根源）。
+///   convertToScreen 转换后 setFrameOrigin。
 /// - 缩放时保留 didResize 观察者：窗口变宽/变窄会使工具栏按钮重排（Open↔Search
 ///   中点水平移动），需重测面板位置；拖动移动由 childWindow 原生跟随，不需要监听。
 /// - **模糊保持**：behindWindow 模糊只在窗口 active（key/main）时渲染，点击主窗口空白处
@@ -24,8 +24,7 @@ import SwiftUI
 ///   模糊保持到主动关闭；应用切后台不抢（重进前台时恢复）。
 /// - 【尺寸缓存】——重定位时尺寸不变则跳过 setContentSize，只 setFrameOrigin。
 /// - 垂直：直接量 Open/Search 按钮视图的实际坐标——面板高度 = 按钮背景高度，
-///   垂直居中于按钮行（不猜 chrome，不贴窗口顶；标题栏/工具栏高度随系统/外观变化，
-///   猜 chrome 正是此前"高度对不上、不居中"的根因）。
+///   垂直居中于按钮行（标题栏/工具栏高度随系统/外观变化，不猜 chrome）。
 @MainActor final class SearchPanelController {
     static let shared = SearchPanelController()
 
@@ -119,7 +118,7 @@ import SwiftUI
     /// 面板定位与尺寸（全部【屏幕坐标】）：
     /// - 高度 = Open/Search 按钮视图的实际高度（即按钮背景高度，直接量按钮）
     /// - 宽度 = Open/Search 按钮水平距离的 50%（下限 220）
-    /// - 水平居中于两按钮中点；垂直居中于按钮行（不再贴窗口顶）
+    /// - 水平居中于两按钮中点；垂直居中于按钮行（不贴窗口顶）
     /// 按钮识别：toolTip（.help 设置）与 label 都查——SwiftUI toolbar item 的 label 常为空。
     private func position(_ panel: NSPanel, relativeTo window: NSWindow) {
         var openFrame: NSRect?
@@ -171,7 +170,7 @@ import SwiftUI
             height = max(24, rowTop - rowBottom)
             y = (rowTop + rowBottom) / 2 - height / 2
         } else {
-            // 回退：量不到按钮时保持旧的 chrome 估算
+            // 回退：量不到按钮时按窗口尺寸估算
             let chromeH = max(32, window.frame.height - window.contentLayoutRect.height)
             height = chromeH
             y = window.frame.maxY - chromeH

@@ -14,7 +14,7 @@ struct MDReviewApp: App {
     }
 }
 
-/// 用户要求「View 菜单」里提供多 Tab 入口：New Tab 打开一个独立文档的新窗口/Tab
+/// View 菜单提供 New Tab 入口：打开一个独立文档的新窗口/Tab
 /// （每个窗口独立 DocState，见 WindowRoot）。系统 File 菜单另有 ⌘N New Window；
 /// 启用 allowsAutomaticWindowTabbing 后 ⌘T/Window 菜单的 Tab 管理由系统提供。
 private struct ViewMenuCommands: Commands {
@@ -88,8 +88,6 @@ private struct WindowFocusTracker: NSViewRepresentable {
 }
 
 /// 应用级外观控制：设置 NSApp.appearance（AppKit 广播外观变化，工具栏等系统组件会刷新）。
-/// 相比 preferredColorScheme：不受 SwiftUI 布局动画影响（不会回退闪烁）；
-/// 相比 NSWindow.appearance：应用级广播会强制 NSToolbar 重绘按钮，避免"图标残留亮色看不清"。
 struct WindowAppearanceModifier: ViewModifier {
     let mode: AppearanceMode
 

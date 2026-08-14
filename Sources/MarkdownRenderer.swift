@@ -21,7 +21,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
 /// 渲染控制器：持有唯一的 WKWebView，负责加载本地 markdown-it + KaTeX，
 /// 把 MD 字符串渲染为 HTML，并通过消息通道取回大纲，提供滚动定位、全文搜索。
 ///
-/// 设计要点（相较旧版的稳定性改进）：
+/// 设计要点：
 /// 1. markdown 直接内联进 HTML 一次性 loadHTMLString，避免“先加载空模板再 evaluate 渲染”的脆弱两步时序。
 /// 2. 大纲由页面脚本通过 WKScriptMessageHandler 主动 postMessage 回 Swift，比 evaluateJavaScript 更可靠。
 /// 3. 仅滚动/搜索使用 evaluateJavaScript，且用 pageLoaded 闸门确保页面已加载完成。
@@ -35,7 +35,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// 当前文档文件名（阅读进度持久化 key 用，Swift/UserDefaults 侧）。
     private(set) var currentDocName: String?
 
-    /// 标记当前页面导航已完成，未就绪时禁止 evaluateJavaScript（修复“持续报错”）。
+    /// 标记当前页面导航已完成，未就绪时禁止 evaluateJavaScript。
     private var pageLoaded = false
 
     override init() {
@@ -138,8 +138,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     }
 
     /// 导出当前渲染结果为【静态 HTML 快照】：从 WebView 取已渲染的正文 DOM（含 KaTeX/高亮/Mermaid
-    /// 渲染结果），拼成无 JS 渲染依赖的页面——macOS 预览/QuickLook 与浏览器都能正常打开
-    /// （旧的 JS 渲染版 HTML 在 Preview 中空白，因为 Preview 不执行脚本）。
+    /// 渲染结果），拼成无 JS 渲染依赖的页面——macOS 预览/QuickLook 与浏览器都能正常打开。
     func exportHTML(to url: URL) async throws {
         guard pageLoaded else { throw ExportError.pageNotLoaded }
         // 1. 确保全文渲染（分块懒渲染模式下补全所有段）
@@ -240,7 +239,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         let data = try! JSONSerialization.data(withJSONObject: [s])
         var raw = String(data: data, encoding: .utf8) ?? "[]"
         // HTML 解析器匹配 </script 时大小写不敏感：文档内容里出现 </SCRIPT> / </Script>
-        // （AI 生成的 MD 常含 HTML/JS 片段）同样会提前闭合内联 <script>，必须全部转义。
+        // 同样会提前闭合内联 <script>，必须全部转义。
         raw = raw.replacingOccurrences(of: "</script>", with: "<\\/script>", options: .caseInsensitive)
         return String(raw.dropFirst().dropLast())
     }
@@ -273,7 +272,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     }()
     private static let headHTML: String = {
         let b = bundled
-        // hljsDark 已 scoped（body.theme-dark 前缀），不再包 @media，改由 JS 按 class 控制
+        // hljsDark 已 scoped（body.theme-dark 前缀），由 JS 按 class 控制
         return "<style>\(b.readerCSS)\n\(b.katexCSS)\n\(b.hljsLight)\n\(b.hljsDark)</style>"
     }()
     private static let scriptsHTML: String = {
@@ -308,8 +307,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// 滚动 / 搜索 / 正则转义等工具函数（不含渲染，渲染见 jsRenderInline）。
     /// 使用原始字符串保留正则中的反斜杠。
     private static let jsFunctions = #"""
-    // 大纲点击跳转：用瞬时滚动（不用 smooth）。smooth 动画期间持续触发 scroll 事件，
-    // 每帧都跑 __onScroll 的布局查询 + SwiftUI 反向高亮更新，长文档下是卡顿主因之一。
+    // 大纲点击跳转：用瞬时滚动（不用 smooth，避免动画期间持续触发滚动/布局查询）。
     // 分块懒渲染模式下目标标题可能尚未渲染：先渲染到目标所在段再滚动。
     window.scrollToHeading = function(id){
       var e = document.getElementById(id);
@@ -380,12 +378,9 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       return window.__searchIdx + 1;
     };
     // 双向同步：根据滚动位置计算当前可视章节，回传 heading id 供大纲反向高亮。
-    // 性能要点（第二次优化，v2）：
-    // 1. 标题文档坐标（__docTop）在渲染完成/资源加载后一次性缓存，滚动时零 getBoundingClientRect
-    //    （旧版每帧 O(N) layout 查询，v1 改二分后仍每帧 O(log N) 次强制布局）。
+    // 1. 标题文档坐标（__docTop）在渲染完成/资源加载后一次性缓存，滚动时零 getBoundingClientRect。
     // 2. 二分查找「最后一个 __docTop <= scrollY+100 的标题」，纯数值比较，无 DOM 访问。
-    // 3. active 消息每次章节切换都回传 Swift（用于大纲高亮 + 阅读进度持久化，
-    //    不再 40ms 节流——节流会让快速滚动的最终章节漏存）。
+    // 3. active 消息每次章节切换都回传 Swift（大纲高亮 + 阅读进度持久化，不节流以免漏存）。
     window.__recomputeHeads = function(){
       var heads = window.__heads;
       if(!heads || !heads.length){ return; }
@@ -408,9 +403,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       var active = idx >= 0 ? heads[idx].id : heads[0].id;
       if(active && active !== window.__lastActive){
         window.__lastActive = active;
-        // 阅读进度持久化在 Swift 侧（UserDefaults，active 消息每次章节切换都回传）：
-        // 不再 localStorage（file:// baseURL 下不持久），也不再 40ms 节流
-        // （节流会让快速滚动的最终章节落在窗口内而漏存——漏存根因之一）。
+        // 阅读进度持久化在 Swift 侧（UserDefaults，active 消息每次章节切换都回传）；
+        // 不用 localStorage（file:// baseURL 下不持久），也不节流（防快速滚动漏存最终章节）。
         if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.active){
           window.webkit.messageHandlers.active.postMessage(active);
         }
@@ -475,7 +469,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
       document.documentElement.style.background = dark ? '#0d1117' : '#ffffff';
       // Mermaid SVG 颜色在渲染时写死，切主题必须按新主题重绘，
-      // 否则图表停留在旧主题、与页面其它部分割裂（外观切换是高频验证点）。
+      // 否则图表停留在旧主题、与页面其它部分割裂。
       // 源文本在首次渲染时存入 pre[data-mermaid-src]，这里直接重渲染替换。
       if(window.mermaid && window.__mermaidInit){
         try {
@@ -731,7 +725,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
                 window.__renderedUpTo = end;
                 recomputeAll();
                 window.__renderMermaid();
-                // 同步返回（不能返回 Promise，见 exportPDF 注释）
+                // 同步返回（不能返回 Promise）
                 return true;
               };
               window.__renderBatch(6);
@@ -757,8 +751,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     weak var renderer: MarkdownRenderer?
 
     // WKScriptMessageHandler 协议在 SDK 中是 @MainActor（WK_SWIFT_UI_ACTOR），
-    // 此回调由 WebKit 在主线程调用。旧代码误标 nonisolated，导致
-    // 访问 MainActor 隔离的 message.name/body 产生并发警告，且理论上不安全。
+    // 此回调由 WebKit 在主线程调用。
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "outline" {
             let heads: [Heading]

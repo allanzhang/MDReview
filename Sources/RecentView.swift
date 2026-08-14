@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// 最近文件列表（与大纲共用侧栏顶部切换器）。
-/// 与 OutlineView 同理弃用 List：ScrollView + LazyVStack 自定义行，
-/// 整行可点击（contentShape）、hover 轻量高亮、无 List selection 抢占。
+/// 用 ScrollView + LazyVStack 自定义行（同 OutlineView，避免 List 行内交互缺陷）：
+/// 整行可点击（contentShape）、hover 轻量高亮。
 struct RecentView: View {
     @EnvironmentObject var doc: DocState
 

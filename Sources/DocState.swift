@@ -20,7 +20,7 @@ enum AppearanceMode: String {
 }
 
 /// 每个窗口（Tab）一份的文档状态：当前打开的 .md、原文、最近文件列表、大纲显隐。
-/// 不再用单例——否则多窗口/Tab 全部共享同一文档（"多个 Tab 文件是同一个"的根因）。
+/// 每个窗口实例化一份，避免多窗口/Tab 共享同一文档。
 /// 多窗口路由（Finder 双击打开走前台窗口）由 static active / pendingOpenURL 处理。
 @MainActor final class DocState: ObservableObject {
     /// 当前获得焦点的窗口对应的文档状态（weak，多窗口时路由 Finder 打开到前台窗口）。
@@ -62,7 +62,7 @@ enum AppearanceMode: String {
     }
 
     /// 外观按钮点击：System → 切到当前系统外观的反面（临时覆盖）；手动 → 回到 System。
-    /// 不持久化手动选择（"不用记住手动"），重启后始终为跟随系统。
+    /// 不持久化手动选择，重启后始终为跟随系统。
     func toggleAppearance() {
         switch appearance {
         case .system:

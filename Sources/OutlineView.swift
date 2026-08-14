@@ -2,10 +2,9 @@ import SwiftUI
 
 /// 左侧大纲：从渲染后的标题自动生成，点哪跳哪；页面滚动时反向高亮当前章节。
 ///
-/// 用 ScrollView + LazyVStack 替代 List 的原因（用户实机反馈的三个交互问题）：
-/// 1. macOS List 行内含 Button 时，首次点击会被行的 selection/hover 抢占，
-///    表现为「部分节标题点不中、需要多次点击、响应慢一拍」；
-/// 2. List 行内 Button 的点击区域只覆盖文字本身，行内空白与深层缩进空白均不响应；
+/// 用 ScrollView + LazyVStack 而非 List（macOS List 行内嵌 Button 交互有缺陷）：
+/// 1. List 行内含 Button 时，首次点击会被行的 selection/hover 抢占；
+/// 2. List 行内 Button 的点击区域只覆盖文字本身，行内空白与缩进空白均不响应；
 /// 3. 自定义行可精确控制整行点击（contentShape）与 hover 反馈，点击即时可靠。
 struct OutlineView: View {
     @ObservedObject var renderer: MarkdownRenderer
