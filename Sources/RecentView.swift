@@ -7,24 +7,42 @@ struct RecentView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(DocState.shared.recent, id: \.self) { url in
-                    RecentRow(url: url) {
+                ForEach(Array(DocState.shared.recent.enumerated()), id: \.element) { index, url in
+                    RecentRow(
+                        url: url,
+                        isFirst: index == 0,
+                        isLast: index == DocState.shared.recent.count - 1
+                    ) {
                         DocState.shared.open(url)
                     }
                 }
             }
-            .padding(.vertical, 2)
+            // 容器留边：让首尾项圆角有呼吸空间
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
         }
         .navigationTitle("Recent")
     }
 }
 
 /// 单行最近文件：文件名 + 所在目录，整行可点击，hover 轻量高亮。
+/// 文字留白充足（horizontal 12 + vertical 7）；首/尾行背景部分圆角。
 private struct RecentRow: View {
     let url: URL
+    let isFirst: Bool
+    let isLast: Bool
     let action: () -> Void
 
     @State private var isHovering = false
+
+    private var rowShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: isFirst ? 8 : 0,
+            bottomLeadingRadius: isLast ? 8 : 0,
+            bottomTrailingRadius: isLast ? 8 : 0,
+            topTrailingRadius: isFirst ? 8 : 0
+        )
+    }
 
     var body: some View {
         Button(action: action) {
@@ -37,12 +55,16 @@ private struct RecentRow: View {
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(isHovering ? Color.primary.opacity(0.06) : nil)
+        .background {
+            if isHovering {
+                rowShape.fill(Color.primary.opacity(0.06))
+            }
+        }
         .onHover { isHovering = $0 }
     }
 }

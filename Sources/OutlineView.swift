@@ -13,52 +13,65 @@ struct OutlineView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(renderer.outline) { h in
+                ForEach(Array(renderer.outline.enumerated()), id: \.element.id) { index, h in
                     OutlineRow(
                         heading: h,
                         isActive: h.id == renderer.activeHeadingID,
                         indent: CGFloat((h.level - 1) * 14),
+                        isFirst: index == 0,
+                        isLast: index == renderer.outline.count - 1,
                         action: { renderer.scrollTo(h.id) }
                     )
                 }
             }
-            .padding(.vertical, 2)
+            // 容器留边：让首尾项圆角有呼吸空间
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
         }
         .navigationTitle("Outline")
     }
 }
 
 /// 单行大纲项：整行可点击（含空白与缩进），hover 轻量高亮，激活行 accent 底色。
+/// 文字留白充足（horizontal 12 + vertical 7）；首/尾行背景部分圆角，视觉更精致。
 private struct OutlineRow: View {
     let heading: Heading
     let isActive: Bool
     let indent: CGFloat
+    let isFirst: Bool
+    let isLast: Bool
     let action: () -> Void
 
     @State private var isHovering = false
+
+    /// 行背景形状：首行顶部圆角、末行底部圆角、中间直角（同 sidebar 列表观感）。
+    private var rowShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: isFirst ? 8 : 0,
+            bottomLeadingRadius: isLast ? 8 : 0,
+            bottomTrailingRadius: isLast ? 8 : 0,
+            topTrailingRadius: isFirst ? 8 : 0
+        )
+    }
 
     var body: some View {
         Button(action: action) {
             Text(heading.text.isEmpty ? "(Untitled)" : heading.text)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 5)
-                // 基础 10pt 左右留白 + 层级缩进：一级标题左侧也不贴边
-                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 12)
                 .padding(.leading, indent)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(rowBackground)
-        .onHover { isHovering = $0 }
-    }
-
-    @ViewBuilder
-    private var rowBackground: some View {
-        if isActive {
-            Color.accentColor.opacity(0.18)
-        } else if isHovering {
-            Color.primary.opacity(0.06)
+        .background {
+            if isActive {
+                rowShape.fill(Color.accentColor.opacity(0.18))
+            } else if isHovering {
+                rowShape.fill(Color.primary.opacity(0.06))
+            }
         }
+        .onHover { isHovering = $0 }
     }
 }
