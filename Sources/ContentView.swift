@@ -373,14 +373,39 @@ struct ContentView: View {
         alert.runModal()
     }
 
-    /// 导出成功反馈：确认 + 可"在 Finder 中显示"。
+    /// 导出成功反馈：居中对齐的确认弹窗（NSAlert 布局是图标左/文字右，无法居中）。
     private func presentExportSuccess(_ url: URL) {
-        let alert = NSAlert()
-        alert.messageText = "Export Complete"
-        alert.informativeText = url.lastPathComponent
-        alert.addButton(withTitle: "Show in Finder")
-        alert.addButton(withTitle: "OK")
-        if alert.runModal() == .alertFirstButtonReturn {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 200),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = ""
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.isReleasedWhenClosed = false
+
+        let view = ExportSuccessPanel(
+            fileName: url.lastPathComponent,
+            onShowInFinder: { NSApp.stopModal(withCode: .alertFirstButtonReturn) },
+            onOK: { NSApp.stopModal(withCode: .alertSecondButtonReturn) }
+        )
+        panel.contentView = NSHostingView(rootView: view)
+        panel.setContentSize(NSSize(width: 340, height: 200))
+        // 相对主窗口居中（而非屏幕居中）
+        if let win = NSApp.mainWindow {
+            panel.setFrameOrigin(NSPoint(
+                x: win.frame.midX - panel.frame.width / 2,
+                y: win.frame.midY - panel.frame.height / 2
+            ))
+        } else {
+            panel.center()
+        }
+        panel.makeKeyAndOrderFront(nil)
+        let response = NSApp.runModal(for: panel)
+        panel.orderOut(nil)
+        if response == .alertFirstButtonReturn {
             NSWorkspace.shared.activateFileViewerSelecting([url])
         }
     }
@@ -447,6 +472,39 @@ private struct ReadingProgressBar: View {
                 .frame(width: geo.size.width * renderer.readingProgress, height: 2)
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// 导出成功弹窗：图标/文字/按钮全部横向居中（替代 NSAlert 的左图标右文字布局）。
+private struct ExportSuccessPanel: View {
+    let fileName: String
+    let onShowInFinder: () -> Void
+    let onOK: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Spacer(minLength: 16)
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 46))
+                .foregroundStyle(.green)
+            Text("Export Complete")
+                .font(.title3)
+                .fontWeight(.semibold)
+            Text(fileName)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+            HStack(spacing: 10) {
+                Button("Show in Finder", action: onShowInFinder)
+                    .keyboardShortcut(.defaultAction)
+                Button("OK", action: onOK)
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(.bottom, 16)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
