@@ -24,6 +24,16 @@ struct ContentView: View {
             detailContent
         }
         .navigationSplitViewStyle(.balanced)
+        // 工具栏下边界：light 下系统 Liquid Glass 与内容区几乎同色无分界，
+        // 叠一条 1px 全宽分隔线（dark 系统自带边界清晰，保持不动）
+        .overlay(alignment: .top) {
+            if systemScheme != .dark {
+                Rectangle()
+                    .fill(Color.black.opacity(0.14))
+                    .frame(height: 1)
+                    .allowsHitTesting(false)
+            }
+        }
         // 打开文档与外部编辑热更新都会更新 rawText，统一由此触发渲染（url 变化必伴随 rawText 变化）
         .onChange(of: doc.rawText) { _, _ in DispatchQueue.main.async { renderCurrent() } }
         // 外观切换：即时注入 JS 生效，不重载页面（保留滚动位置与渲染状态）
