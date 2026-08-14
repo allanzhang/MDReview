@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// 左侧大纲：从渲染后的标题自动生成，点哪跳哪；页面滚动时反向高亮当前章节。
 ///
@@ -69,6 +70,12 @@ private struct OutlineRow: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button("Copy Heading") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(heading.text, forType: .string)
+            }
+        }
         .background {
             // 层次感：light 下 hover/激活更实（浅灰叠白底 6% 不可见），dark 保持现状
             if isActive {

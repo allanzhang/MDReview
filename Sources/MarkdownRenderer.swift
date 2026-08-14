@@ -33,6 +33,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     @Published var searchCurrent: Int = 0
     /// 页面滚动时由 JS 回传的当前可视章节 id，用于大纲反向高亮（双向同步）。
     @Published var activeHeadingID: String? = nil
+    /// 阅读进度 0~1（顶部进度条用），滚动时由 JS 回传。
+    @Published var readingProgress: Double = 0
     /// 当前文档文件名（阅读进度持久化 key 用，Swift/UserDefaults 侧）。
     private(set) var currentDocName: String?
 
@@ -49,6 +51,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         config.userContentController.add(coord, name: "outline")
         // 注册可视章节回传通道：页面滚动时回传当前 heading id，用于大纲反向高亮
         config.userContentController.add(coord, name: "active")
+        // 注册阅读进度回传通道：页面滚动时回传 0~1 进度，用于顶部进度条
+        config.userContentController.add(coord, name: "progress")
 
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.autoresizingMask = [.width, .height]
@@ -227,6 +231,14 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         webView.evaluateJavaScript("searchGo(-1)") { [weak self] result, _ in
             guard let self else { return }
             if let cur = result as? Int { DispatchQueue.main.async { self.searchCurrent = cur } }
+        }
+    }
+
+    /// 读取文档当前选中文本（⌘F 时用于预填搜索词；无选中/页面未就绪返回空串）。
+    func selectedText(completion: @escaping (String) -> Void) {
+        guard pageLoaded else { completion(""); return }
+        webView.evaluateJavaScript("(window.getSelection ? window.getSelection().toString() : '')") { result, _ in
+            DispatchQueue.main.async { completion((result as? String) ?? "") }
         }
     }
 
@@ -460,6 +472,16 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       window.requestAnimationFrame(function(){
         window.__onScroll && window.__onScroll();
         window.__maybeLoadMore && window.__maybeLoadMore();
+        // 阅读进度回传（顶部进度条）：scrollY / (scrollHeight - innerHeight)，阈值过滤防抖动
+        var docEl = document.documentElement;
+        var max = (docEl.scrollHeight - window.innerHeight) || 1;
+        var p = Math.min(1, Math.max(0, window.scrollY / max));
+        if (Math.abs(p - (window.__lastProgress || 0)) > 0.002) {
+          window.__lastProgress = p;
+          if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.progress) {
+            window.webkit.messageHandlers.progress.postMessage(p);
+          }
+        }
       });
     }, {passive:true});
     // 图片等资源异步加载会改变布局，load 后重算标题坐标缓存
@@ -774,6 +796,9 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             r.activeHeadingID = id
             // 阅读进度持久化：每次章节切换写入 UserDefaults（恢复时 render() 读回注入页面）
             r.saveProgress(id)
+        } else if message.name == "progress" {
+            guard let p = (message.body as? NSNumber)?.doubleValue, let r = renderer, r.readingProgress != p else { return }
+            r.readingProgress = p
         }
     }
 

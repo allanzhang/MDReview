@@ -16,6 +16,8 @@ struct ContentView: View {
     @State private var searchDebounce: DispatchWorkItem?
     /// 拖拽悬停状态（用于高亮反馈）。
     @State private var isDropTargeted = false
+    /// 当前文档字数（窗口副标题显示）。
+    @State private var wordCount = 0
 
     var body: some View {
         NavigationSplitView(columnVisibility: $doc.columnVisibility) {
@@ -37,15 +39,25 @@ struct ContentView: View {
             }
         }
         // 打开文档与外部编辑热更新都会更新 rawText，统一由此触发渲染（url 变化必伴随 rawText 变化）
-        .onChange(of: doc.rawText) { _, _ in DispatchQueue.main.async { renderCurrent() } }
+        .onChange(of: doc.rawText) { _, _ in
+            wordCount = Self.countWords(doc.rawText)
+            DispatchQueue.main.async { renderCurrent() }
+        }
         // 外观切换：即时注入 JS 生效，不重载页面（保留滚动位置与渲染状态）
         .onChange(of: doc.appearance) { _, mode in renderer.applyAppearance(mode) }
-        .onAppear { DispatchQueue.main.async { renderCurrent() } }
+        .onAppear {
+            DispatchQueue.main.async {
+                renderCurrent()
+                restoreLastDocument()
+            }
+        }
         // 菜单命令（File/View）经 NotificationCenter 转发到这里执行
         .onReceive(NotificationCenter.default.publisher(for: .mdreviewMenuAction)) { note in
             guard let action = note.object as? MenuAction else { return }
             handleMenuAction(action)
         }
+        // 记忆窗口位置/大小（AppKit frame autosave，跨启动恢复）
+        .background(WindowFrameAutosave())
     }
 
     private func handleMenuAction(_ action: MenuAction) {
@@ -60,7 +72,63 @@ struct ContentView: View {
         case .exportHTML: exportHTML()
         case .exportPDF: exportPDF()
         case .openInExternalEditor: openInExternalEditor()
+        case .openRecent(let url): DocState.shared.open(url)
+        case .clearRecent: DocState.shared.clearRecent()
         }
+    }
+
+    /// 启动时若未由 Finder 打开文件，则恢复上次文档（文件仍存在时）。
+    private func restoreLastDocument() {
+        // 延迟一拍，等 application(_:open:)（Finder 双击）先到达，避免与其竞态
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard !DocState.shared.didOpenViaSystem, let url = DocState.shared.lastDocumentURL else { return }
+            DocState.shared.open(url)
+        }
+    }
+
+    private static func countWords(_ text: String) -> Int {
+        var count = 0
+        var inWord = false
+        for ch in text {
+            if ch.isWhitespace { inWord = false }
+            else if !inWord { inWord = true; count += 1 }
+        }
+        return count
+    }
+
+    /// 窗口副标题：目录 + 字数。
+    private var subtitleText: String {
+        guard let url = doc.url else { return "" }
+        let dir = url.deletingLastPathComponent().path
+        return wordCount > 0 ? "\(dir) · \(wordCount) words" : dir
+    }
+
+    /// 呼出/关闭搜索面板；⌘F 时若文档有选中文字则预填搜索词。
+    private func toggleSearch() {
+        if SearchPanelController.shared.isVisible {
+            SearchPanelController.shared.hide()
+            searchText = ""
+            renderer.search("")
+            return
+        }
+        renderer.selectedText { sel in
+            let t = sel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { self.searchText = t }
+            SearchPanelController.shared.toggle(renderer: renderer, text: $searchText, onClose: {
+                SearchPanelController.shared.hide()
+                searchText = ""
+                renderer.search("")
+            })
+        }
+    }
+
+    private func copySelection() {
+        NSApp.sendAction(Selector(("copy:")), to: nil, from: nil)
+    }
+
+    private func revealInFinder() {
+        guard let url = doc.url else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     @ViewBuilder
@@ -70,7 +138,7 @@ struct ContentView: View {
             HStack(spacing: 4) {
                 SidebarSegment(title: "Outline", systemImage: "list.bullet",
                                isSelected: doc.showOutline) { doc.showOutline = true }
-                SidebarSegment(title: "History", systemImage: "clock",
+                SidebarSegment(title: "Recent", systemImage: "clock",
                                isSelected: !doc.showOutline) { doc.showOutline = false }
             }
             .padding(.horizontal, 8)
@@ -114,12 +182,32 @@ struct ContentView: View {
                 }
             // 无文档空状态引导
             if doc.url == nil {
-                EmptyStateView()
+                EmptyStateView(onOpen: { openPanel() })
             }
             // 源码态：只读覆盖在 WebView 之上，保留渲染状态不卸载
             if doc.showSource && doc.url != nil {
                 SourceView(text: doc.rawText)
             }
+        }
+        .contextMenu {
+            Button("Copy") { copySelection() }
+            if doc.url != nil {
+                Divider()
+                Button("Reveal in Finder") { revealInFinder() }
+                Button("Open in External Editor") { openInExternalEditor() }
+                Divider()
+                Button("Export as HTML…") { exportHTML() }
+                Button("Export as PDF…") { exportPDF() }
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            // 阅读进度条：顶部 2px accent 细条（进度 0 时不可见）
+            GeometryReader { geo in
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(width: geo.size.width * renderer.readingProgress, height: 2)
+            }
+            .allowsHitTesting(false)
         }
         .onChange(of: searchText) { _, newValue in
             // 防抖：连续输入不触发搜索，停顿 250ms 后执行一次（避免大文档全文遍历打满 WebContent）
@@ -128,9 +216,9 @@ struct ContentView: View {
             searchDebounce = item
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: item)
         }
-        // 窗口标题：显示当前文件名与所在目录（无文档时显示 App 名）
+        // 窗口标题：显示当前文件名与所在目录 + 字数（无文档时显示 App 名）
         .navigationTitle(doc.url?.lastPathComponent ?? "MDReview")
-        .navigationSubtitle(doc.url?.deletingLastPathComponent().path ?? "")
+        .navigationSubtitle(subtitleText)
         // 折叠/展开侧边栏的按钮放在 Content Panel 的工具栏，符合用户的交互预期
         .toolbar { detailToolbar }
     }
@@ -151,17 +239,8 @@ struct ContentView: View {
                 .help("Open Markdown File")
         }
         ToolbarItem(placement: .primaryAction) {
-            // 搜索：呼出浮动面板（标题栏中央悬空覆盖，原布局不变）
-            Button {
-                SearchPanelController.shared.toggle(renderer: renderer,
-                                                    text: $searchText,
-                                                    onClose: {
-                                                        // 关闭面板 + 清空搜索
-                                                        SearchPanelController.shared.hide()
-                                                        searchText = ""
-                                                        renderer.search("")
-                                                    })
-            } label: { Label("Search", systemImage: "magnifyingglass") }
+            // 搜索：呼出浮动面板（⌘F；文档有选中文字时预填搜索词）
+            Button { toggleSearch() } label: { Label("Search", systemImage: "magnifyingglass") }
                 .keyboardShortcut("f", modifiers: .command)
                 .help("Search in Document")
         }
@@ -217,6 +296,7 @@ struct ContentView: View {
         // 否则页面未就绪会触发 "Request to run JavaScript failed" 持续报错。
         renderer.searchCount = 0
         renderer.searchCurrent = 0
+        renderer.readingProgress = 0
         searchText = ""
         renderer.render(doc.rawText, baseURL: url.deletingLastPathComponent(),
                         docName: url.lastPathComponent, appearance: doc.appearance)
@@ -264,6 +344,7 @@ struct ContentView: View {
         Task {
             do {
                 try await renderer.exportHTML(to: dest)
+                await MainActor.run { presentExportSuccess(dest) }
             } catch {
                 await MainActor.run { presentExportError(error) }
             }
@@ -281,6 +362,7 @@ struct ContentView: View {
         Task {
             do {
                 try await renderer.exportPDF(to: dest)
+                await MainActor.run { presentExportSuccess(dest) }
             } catch {
                 await MainActor.run { presentExportError(error) }
             }
@@ -295,31 +377,29 @@ struct ContentView: View {
         alert.runModal()
     }
 
+    /// 导出成功反馈：确认 + 可"在 Finder 中显示"。
+    private func presentExportSuccess(_ url: URL) {
+        let alert = NSAlert()
+        alert.messageText = "Export Complete"
+        alert.informativeText = url.lastPathComponent
+        alert.addButton(withTitle: "Show in Finder")
+        alert.addButton(withTitle: "OK")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+
     /// 用外部编辑器打开当前文件：优先 Cursor / VSCode，未检测到则退回系统默认关联应用。
     private func openInExternalEditor() {
         guard let url = doc.url else { return }
-        let userApps = NSHomeDirectory() + "/Applications"
-        let candidates = [
-            "/Applications/Cursor.app",
-            "/Applications/Visual Studio Code.app",
-            userApps + "/Cursor.app",
-            userApps + "/Visual Studio Code.app"
-        ]
-        var appURL: URL?
-        for c in candidates {
-            if FileManager.default.fileExists(atPath: c) { appURL = URL(fileURLWithPath: c); break }
-        }
-        if let appURL {
-            let cfg = NSWorkspace.OpenConfiguration()
-            NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: cfg) { _, _ in }
-        } else {
-            NSWorkspace.shared.open(url)
-        }
+        DocState.shared.openInExternalEditor(url)
     }
 }
 
-/// 无文档时的空状态引导页：提示打开/拖拽方式，克制不喧宾夺主。
+/// 无文档时的空状态引导页：图标 + 说明 + 主操作按钮，克制不喧宾夺主。
 struct EmptyStateView: View {
+    let onOpen: () -> Void
+
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: "doc.richtext")
@@ -330,6 +410,13 @@ struct EmptyStateView: View {
                 .fontWeight(.medium)
             Text("Open a Markdown file or drop one here")
                 .foregroundStyle(.secondary)
+            Button(action: onOpen) {
+                Label("Open…", systemImage: "folder")
+                    .font(.system(size: 14, weight: .medium))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
             Text("Toolbar  Open  ·  Drag & Drop  ·  Recent")
                 .font(.callout)
                 .foregroundStyle(.tertiary)
@@ -337,6 +424,19 @@ struct EmptyStateView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
     }
+}
+
+/// 记忆窗口位置/大小：AppKit 的 frame autosave（跨启动恢复）。
+private struct WindowFrameAutosave: NSViewRepresentable {
+    static let name = "MDReviewMainWindow"
+
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async { v.window?.setFrameAutosaveName(Self.name) }
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 /// 侧边栏视图切换按钮：图标 + 文字，选中态 accent 高亮，均分拉宽、垂直拉长。
@@ -456,6 +556,12 @@ struct SearchBar: View {
                 .font(.system(size: 14))
                 .focused($isFocused)
                 .onExitCommand { onClose() }   // Esc 关闭搜索面板
+                .onKeyPress(keys: [.return]) { press in
+                    // Enter 下一个匹配、Shift+Enter 上一个（主流查找栏惯例）
+                    if press.modifiers.contains(.shift) { renderer.searchPrev() }
+                    else { renderer.searchNext() }
+                    return .handled
+                }
                 .onAppear {
                     // 延迟聚焦：等待浮动面板成为 key window 后输入框才可聚焦
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { isFocused = true }

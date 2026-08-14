@@ -29,7 +29,9 @@ enum AppearanceMode: String {
     @Published var recent: [URL] = []
     @Published var showOutline = true
     /// 侧边栏显隐（用于 NavigationSplitView columnVisibility 绑定）。
-    @Published var columnVisibility: NavigationSplitViewVisibility = .all
+    @Published var columnVisibility: NavigationSplitViewVisibility = .all {
+        didSet { UserDefaults.standard.set(columnVisibility != .detailOnly, forKey: sidebarKey) }
+    }
     /// 渲染 / 源码 只读切换。
     @Published var showSource = false
     /// 外观模式（跟随系统/强制亮/强制暗）。默认始终为 system（不持久化手动选择，
@@ -38,14 +40,27 @@ enum AppearanceMode: String {
 
     private let recentKey = "mdreview.recent"
     private let recentMax = 30
+    private let lastUrlKey = "mdreview.lastUrl"
+    private let sidebarKey = "mdreview.sidebarVisible"
     /// 当前文件系统监听（外部编辑器保存后自动重载，AI 工作流刚需）。
     private var fileMonitor: DispatchSourceFileSystemObject?
     private var reloadWorkItem: DispatchWorkItem?
     /// 异步打开竞态防护：记录最近一次请求的 URL，读盘完成时若已被新请求覆盖则丢弃旧结果。
     private var pendingOpenURL: URL?
+    /// 启动时是否已由系统打开文件（Finder 双击）：若是则不再自动恢复上次文档。
+    var didOpenViaSystem = false
+    /// 上次打开文档的路径（启动恢复用；文件已不存在则返回 nil）。
+    var lastDocumentURL: URL? {
+        guard let path = UserDefaults.standard.string(forKey: lastUrlKey) else { return nil }
+        let url = URL(fileURLWithPath: path)
+        return FileManager.default.fileExists(atPath: path) ? url : nil
+    }
 
     init() {
         loadRecent()
+        if UserDefaults.standard.object(forKey: sidebarKey) as? Bool == false {
+            columnVisibility = .detailOnly
+        }
     }
 
     /// 外观按钮点击：System → 切到当前系统外观的反面（临时覆盖）；手动 → 回到 System。
@@ -77,6 +92,7 @@ enum AppearanceMode: String {
                 if let text {
                     self.rawText = text
                     self.url = url
+                    UserDefaults.standard.set(url.path, forKey: self.lastUrlKey)
                     if let idx = self.recent.firstIndex(of: url) { self.recent.remove(at: idx) }
                     self.recent.insert(url, at: 0)
                     if self.recent.count > self.recentMax { self.recent.removeLast() }
@@ -146,5 +162,38 @@ enum AppearanceMode: String {
     private func saveRecent() {
         let arr = recent.map { $0.path }
         UserDefaults.standard.set(arr, forKey: recentKey)
+    }
+
+    /// 从最近列表移除（右键菜单）。
+    func removeRecent(_ url: URL) {
+        recent.removeAll { $0 == url }
+        saveRecent()
+    }
+
+    /// 清空最近列表（Open Recent 菜单）。
+    func clearRecent() {
+        recent.removeAll()
+        saveRecent()
+    }
+
+    /// 用外部编辑器打开指定文件：优先 Cursor / VSCode，未检测到则退回系统默认关联应用。
+    func openInExternalEditor(_ url: URL) {
+        let userApps = NSHomeDirectory() + "/Applications"
+        let candidates = [
+            "/Applications/Cursor.app",
+            "/Applications/Visual Studio Code.app",
+            userApps + "/Cursor.app",
+            userApps + "/Visual Studio Code.app"
+        ]
+        var appURL: URL?
+        for c in candidates {
+            if FileManager.default.fileExists(atPath: c) { appURL = URL(fileURLWithPath: c); break }
+        }
+        if let appURL {
+            let cfg = NSWorkspace.OpenConfiguration()
+            NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: cfg) { _, _ in }
+        } else {
+            NSWorkspace.shared.open(url)
+        }
     }
 }

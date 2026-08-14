@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// 最近文件列表（与大纲共用侧栏顶部切换器）。
 /// 用 ScrollView + LazyVStack 自定义行（同 OutlineView，避免 List 行内交互缺陷）：
@@ -61,6 +62,16 @@ private struct RecentRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+            Button("Copy Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url.path, forType: .string)
+            }
+            Button("Open in External Editor") { DocState.shared.openInExternalEditor(url) }
+            Divider()
+            Button("Remove from Recent") { DocState.shared.removeRecent(url) }
+        }
         .background {
             if isHovering {
                 // 层次感：light 下 hover 更实（浅灰叠白底不可见），dark 保持现状
