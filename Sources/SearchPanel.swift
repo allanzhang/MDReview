@@ -99,13 +99,15 @@ import SwiftUI
         let y: CGFloat
 
         if let o = openFrame, let s = searchFrame {
-            // 高度 = 工具栏区域总高（按钮背景矩形的实际高度，不是按钮图标高）；
-            // 宽度 = 两按钮水平间距的 70%（下限 220 保证可输入）
-            height = max(28, window.frame.height - window.contentLayoutRect.height)
-            width = max(220, (s.midX - o.midX) * 0.7)
-            // 水平 + 垂直双居中于两按钮中点
+            // 高度 = 工具栏区域总高（按钮背景矩形实际高度）
+            let chromeH = max(28, window.frame.height - window.contentLayoutRect.height)
+            height = chromeH
+            // 宽度 = 两按钮水平间距的 50%（下限 220 保证可输入）
+            width = max(220, (s.midX - o.midX) * 0.5)
+            // 水平：居中于两按钮中点
             x = (o.midX + s.midX) / 2 - width / 2
-            y = (o.midY + s.midY) / 2 - height / 2
+            // 垂直：以工具栏条为基准居中（用按钮中点会因按钮偏上而顶出窗口上沿）
+            y = window.frame.maxY - chromeH / 2 - height / 2
         } else {
             // 回退：窗口顶部居中（屏幕坐标，永不飞出）
             let wf = window.frame
