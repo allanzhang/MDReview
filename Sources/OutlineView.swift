@@ -24,15 +24,16 @@ struct OutlineView: View {
                 }
             }
             // 容器留边：让首尾项圆角有呼吸空间
-            .padding(.horizontal, 5)
-            .padding(.vertical, 3)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
         }
         .navigationTitle("Outline")
     }
 }
 
 /// 单行大纲项：整行可点击（含空白与缩进），hover 轻量高亮，激活行 accent 底色。
-/// 文字留白充足（horizontal 12 + vertical 7）；首/尾行背景部分圆角，视觉更精致。
+/// 字体层次：h1 常规 primary、次级标题 secondary、激活行 semibold；
+/// 留白 horizontal 10 + 层级缩进、vertical 6；首/尾行背景部分圆角。
 private struct OutlineRow: View {
     let heading: Heading
     let isActive: Bool
@@ -58,10 +59,13 @@ private struct OutlineRow: View {
         Button(action: action) {
             Text(heading.text.isEmpty ? "(Untitled)" : heading.text)
                 .lineLimit(2)
+                .truncationMode(.tail)
+                .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+                .foregroundStyle(isActive ? Color.primary : (heading.level > 1 ? Color.secondary : Color.primary))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-                .padding(.horizontal, 12)
-                .padding(.leading, indent)
+                .padding(.vertical, 6)
+                .padding(.leading, 10 + indent)
+                .padding(.trailing, 10)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -69,14 +73,16 @@ private struct OutlineRow: View {
             // 层次感：light 下 hover/激活更实（浅灰叠白底 6% 不可见），dark 保持现状
             if isActive {
                 rowShape.fill(scheme == .dark
-                              ? Color.accentColor.opacity(0.20)
-                              : Color.accentColor.opacity(0.26))
+                              ? Color.accentColor.opacity(0.18)
+                              : Color.accentColor.opacity(0.22))
             } else if isHovering {
                 rowShape.fill(scheme == .dark
-                              ? Color.white.opacity(0.06)
-                              : Color.black.opacity(0.08))
+                              ? Color.white.opacity(0.07)
+                              : Color.black.opacity(0.06))
             }
         }
+        .animation(.easeOut(duration: 0.12), value: isActive)
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .onHover { isHovering = $0 }
     }
 }
