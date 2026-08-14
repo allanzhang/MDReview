@@ -33,13 +33,20 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebar: some View {
         VStack(spacing: 0) {
-            // Outline / Recent 切换器：仅图标、无文字 Label，保持侧栏顶部干净（macOS 26 自动 Liquid Glass 样式）
-            Picker("View", selection: $doc.showOutline) {
-                Image(systemName: "list.bullet").tag(true)
-                Image(systemName: "clock").tag(false)
+            // 视图切换：两个大按钮（图标 + 文字），替代原 segmented Picker（去掉 View 标签、拉宽拉长）
+            HStack(spacing: 4) {
+                SidebarSegment(title: "Outline", systemImage: "list.bullet",
+                               isSelected: doc.showOutline) { doc.showOutline = true }
+                SidebarSegment(title: "History", systemImage: "clock",
+                               isSelected: !doc.showOutline) { doc.showOutline = false }
             }
-            .pickerStyle(.segmented)
-            .padding(10)
+            .padding(4)
+            .background {
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(Color.primary.opacity(0.05))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity)
             Divider()
             if doc.showOutline {
@@ -305,6 +312,31 @@ struct EmptyStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
+    }
+}
+
+/// 侧边栏视图切换按钮：图标 + 文字，选中态 accent 高亮，均分拉宽、垂直拉长。
+private struct SidebarSegment: View {
+    let title: String
+    let systemImage: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 12, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background {
+            RoundedRectangle(cornerRadius: 7)
+                .fill(isSelected ? Color.accentColor : Color.clear)
+        }
+        .foregroundStyle(isSelected ? Color.white : Color.primary)
+        .animation(.easeOut(duration: 0.12), value: isSelected)
     }
 }
 
