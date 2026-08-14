@@ -19,6 +19,38 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     }
 }
 
+/// WKWebView 子类：自定义阅读区右键菜单。macOS 的 WKWebView 没有 UIMenu 委托
+/// （那是 iOS API），系统默认菜单会吞掉 SwiftUI 的 contextMenu，只能重写 menu(for:)，
+/// 在系统默认菜单（Copy 等）基础上追加自定义项。
+final class MarkdownWebView: WKWebView {
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        guard !menu.items.contains(where: { $0.title == "Reveal in Finder" }) else { return menu }
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
+        menu.addItem(makeItem("Reveal in Finder", #selector(revealInFinder(_:))))
+        menu.addItem(makeItem("Open in External Editor", #selector(openInExternalEditor(_:))))
+        menu.addItem(.separator())
+        menu.addItem(makeItem("Export as HTML…", #selector(exportHTML(_:))))
+        menu.addItem(makeItem("Export as PDF…", #selector(exportPDF(_:))))
+        return menu
+    }
+
+    private func makeItem(_ title: String, _ action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    private func post(_ action: MenuAction) {
+        NotificationCenter.default.post(name: .mdreviewMenuAction, object: action)
+    }
+
+    @objc private func revealInFinder(_ sender: Any?) { post(.revealInFinder) }
+    @objc private func openInExternalEditor(_ sender: Any?) { post(.openInExternalEditor) }
+    @objc private func exportHTML(_ sender: Any?) { post(.exportHTML) }
+    @objc private func exportPDF(_ sender: Any?) { post(.exportPDF) }
+}
+
 /// 渲染控制器：持有唯一的 WKWebView，负责加载本地 markdown-it + KaTeX，
 /// 把 MD 字符串渲染为 HTML，并通过消息通道取回大纲，提供滚动定位、全文搜索。
 ///
@@ -54,7 +86,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         // 注册阅读进度回传通道：页面滚动时回传 0~1 进度，用于顶部进度条
         config.userContentController.add(coord, name: "progress")
 
-        let wv = WKWebView(frame: .zero, configuration: config)
+        let wv = MarkdownWebView(frame: .zero, configuration: config)
         wv.autoresizingMask = [.width, .height]
         webView = wv
         super.init()
@@ -805,6 +837,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         renderer?.didFinishNavigation()
     }
+
 }
 
 /// 导出相关错误。

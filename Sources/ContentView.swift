@@ -72,6 +72,7 @@ struct ContentView: View {
         case .exportHTML: exportHTML()
         case .exportPDF: exportPDF()
         case .openInExternalEditor: openInExternalEditor()
+        case .revealInFinder: revealInFinder()
         case .openRecent(let url): DocState.shared.open(url)
         case .clearRecent: DocState.shared.clearRecent()
         }
@@ -201,13 +202,8 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            // 阅读进度条：顶部 2px accent 细条（进度 0 时不可见）
-            GeometryReader { geo in
-                Rectangle()
-                    .fill(Color.accentColor)
-                    .frame(width: geo.size.width * renderer.readingProgress, height: 2)
-            }
-            .allowsHitTesting(false)
+            // 阅读进度条：独立子视图观察 renderer，进度变化时精准重绘
+            ReadingProgressBar(renderer: renderer)
         }
         .onChange(of: searchText) { _, newValue in
             // 防抖：连续输入不触发搜索，停顿 250ms 后执行一次（避免大文档全文遍历打满 WebContent）
@@ -437,6 +433,21 @@ private struct WindowFrameAutosave: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+/// 阅读进度条：独立 @ObservedObject 观察 renderer——ContentView 不观察 renderer
+/// （避免滚动高频重算整树），进度变化只重绘这一条。
+private struct ReadingProgressBar: View {
+    @ObservedObject var renderer: MarkdownRenderer
+
+    var body: some View {
+        GeometryReader { geo in
+            Rectangle()
+                .fill(Color.accentColor)
+                .frame(width: geo.size.width * renderer.readingProgress, height: 2)
+        }
+        .allowsHitTesting(false)
+    }
 }
 
 /// 侧边栏视图切换按钮：图标 + 文字，选中态 accent 高亮，均分拉宽、垂直拉长。

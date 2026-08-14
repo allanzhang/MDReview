@@ -87,7 +87,7 @@ struct MDReviewApp: App {
 enum MenuAction {
     case openPanel, toggleSidebar, toggleSource
     case appearanceSystem, appearanceLight, appearanceDark
-    case exportHTML, exportPDF, openInExternalEditor
+    case exportHTML, exportPDF, openInExternalEditor, revealInFinder
     case openRecent(URL), clearRecent
 }
 
