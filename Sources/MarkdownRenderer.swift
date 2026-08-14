@@ -223,7 +223,23 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     private static let jsFunctions = #"""
     // 大纲点击跳转：用瞬时滚动（不用 smooth）。smooth 动画期间持续触发 scroll 事件，
     // 每帧都跑 __onScroll 的布局查询 + SwiftUI 反向高亮更新，长文档下是卡顿主因之一。
-    window.scrollToHeading = function(id){ var e=document.getElementById(id); if(e){ e.scrollIntoView({block:'start'}); } };
+    // 分块懒渲染模式下目标标题可能尚未渲染：先渲染到目标所在段再滚动。
+    window.scrollToHeading = function(id){
+      var e = document.getElementById(id);
+      if(!e && window.__sections){
+        var n = parseInt(String(id).replace(/^h-/,''), 10);
+        if(!isNaN(n)){
+          for (var i = 0; i < window.__sections.length; i++){
+            var ss = window.__sections[i].startSeq;
+            if(ss < 0){ continue; }   // 引言段无标题，跳过（不能 break，否则引言开头的文档跳转失效）
+            if(ss <= n){ window.__renderUpToSection(i); }
+            else { break; }
+          }
+          e = document.getElementById(id);
+        }
+      }
+      if(e){ e.scrollIntoView({block:'start'}); }
+    };
     window.__marks = []; window.__searchIdx = -1;
     window.__clearSearch = function(){
       var cs = document.querySelectorAll('mark.srch');
@@ -314,8 +330,12 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         }
       }
     };
-    // 大文档分块懒渲染：滚动接近已渲染区底部时加载下一批
+    // 大文档分块懒渲染：滚动接近已渲染区底部时加载下一批。
+    // 80ms 时间节流：rAF 每帧调用，getBoundingClientRect 是强制布局查询，不能每帧执行。
     window.__maybeLoadMore = function(){
+      var now = Date.now();
+      if(now - (window.__lastLoadCheck || 0) < 80){ return; }
+      window.__lastLoadCheck = now;
       if(!window.__sections || window.__renderedUpTo >= window.__sections.length - 1){ return; }
       var content = document.getElementById('content');
       var last = content.lastElementChild;
@@ -333,9 +353,10 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         var n = parseInt(String(saved).replace(/^h-/,''), 10);
         if(!isNaN(n)){
           for (var i = 0; i < window.__sections.length; i++){
-            if(window.__sections[i].startSeq >= 0 && window.__sections[i].startSeq <= n){
-              window.__renderUpToSection(i);
-            } else { break; }
+            var ss = window.__sections[i].startSeq;
+            if(ss < 0){ continue; }   // 引言段无标题，跳过（不能 break）
+            if(ss <= n){ window.__renderUpToSection(i); }
+            else { break; }
           }
           e = document.getElementById(saved);
         }
@@ -401,6 +422,13 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             var chunkMode = '\#(chunkMode)';
 
             // —— 扫描大纲 + 按标题切分（跳过代码围栏），全量/分块两模式共用 ——
+            function cleanHeadingText(s){
+              // 去除行内 markdown 标记：粗体/斜体/行内码/删除线/链接，避免大纲显示原始语法
+              return s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+                      .replace(/[*_`~]/g, '')
+                      .replace(/\s+/g, ' ')
+                      .trim();
+            }
             function scanAndSplit(text){
               var lines = text.split('\n');
               var outline = []; var sections = []; var cur = []; var inFence = false;
@@ -413,7 +441,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
                   var m = /^(#{1,6})\s+(.+)$/.exec(ln);
                   if(m){
                     flush();
-                    outline.push({level: m[1].length, text: m[2], id: 'h-' + seq});
+                    outline.push({level: m[1].length, text: cleanHeadingText(m[2]), id: 'h-' + seq});
                     pendingSeq = seq; seq++;
                   }
                 }

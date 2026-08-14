@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var renderer = MarkdownRenderer()
     @State private var searchText = ""
     @State private var showSearch = false
+    /// 搜索防抖（大文档 TreeWalker 全文遍历昂贵，输入停顿 250ms 才执行）。
+    @State private var searchDebounce: DispatchWorkItem?
 
     var body: some View {
         NavigationSplitView(columnVisibility: $doc.columnVisibility) {
@@ -69,7 +71,13 @@ struct ContentView: View {
                           })
             }
         }
-        .onChange(of: searchText) { _, _ in DispatchQueue.main.async { renderer.search(searchText) } }
+        .onChange(of: searchText) { _, newValue in
+            // 防抖：连续输入不触发搜索，停顿 250ms 后执行一次（避免大文档全文遍历打满 WebContent）
+            searchDebounce?.cancel()
+            let item = DispatchWorkItem { renderer.search(newValue) }
+            searchDebounce = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: item)
+        }
         // 折叠/展开侧边栏的按钮放在 Content Panel 的工具栏，符合用户的交互预期
         .toolbar { detailToolbar }
     }

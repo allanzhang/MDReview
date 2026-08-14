@@ -30,6 +30,8 @@ enum AppearanceMode: String {
     /// 当前文件系统监听（外部编辑器保存后自动重载，AI 工作流刚需）。
     private var fileMonitor: DispatchSourceFileSystemObject?
     private var reloadWorkItem: DispatchWorkItem?
+    /// 异步打开竞态防护：记录最近一次请求的 URL，读盘完成时若已被新请求覆盖则丢弃旧结果。
+    private var pendingOpenURL: URL?
 
     init() {
         loadRecent()
@@ -46,17 +48,28 @@ enum AppearanceMode: String {
         guard url.pathExtension.lowercased() == "md" ||
               url.pathExtension.lowercased() == "markdown" else { return }
         startMonitoring(url)
-        do {
-            let text = try String(contentsOf: url, encoding: .utf8)
-            self.rawText = text
-            self.url = url
-            if let idx = recent.firstIndex(of: url) { recent.remove(at: idx) }
-            recent.insert(url, at: 0)
-            if recent.count > recentMax { recent.removeLast() }
-            saveRecent()
-        } catch {
-            self.rawText = "// Cannot read file:\n\(error.localizedDescription)"
-            self.url = url
+        pendingOpenURL = url
+        // 后台读盘避免大文件阻塞主线程；完成回调经 pendingOpenURL 比对丢弃过期结果
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var text: String?
+            var errorMsg: String?
+            do { text = try String(contentsOf: url, encoding: .utf8) }
+            catch { errorMsg = error.localizedDescription }
+            await MainActor.run {
+                guard let self, self.pendingOpenURL == url else { return }  // 已被更新的打开请求覆盖
+                self.pendingOpenURL = nil
+                if let text {
+                    self.rawText = text
+                    self.url = url
+                    if let idx = self.recent.firstIndex(of: url) { self.recent.remove(at: idx) }
+                    self.recent.insert(url, at: 0)
+                    if self.recent.count > self.recentMax { self.recent.removeLast() }
+                    self.saveRecent()
+                } else {
+                    self.rawText = "// Cannot read file:\n\(errorMsg ?? "Unknown error")"
+                    self.url = url
+                }
+            }
         }
     }
 
@@ -97,11 +110,13 @@ enum AppearanceMode: String {
             fileMonitor = nil
             return
         }
-        do {
-            let text = try String(contentsOf: url, encoding: .utf8)
-            if text != rawText { rawText = text }
-        } catch {
-            // 读取失败（编辑器可能正在写入中途）：忽略，等下一次事件
+        // 后台读盘避免大文件热更新阻塞主线程
+        Task.detached(priority: .utility) { [weak self] in
+            let text = try? String(contentsOf: url, encoding: .utf8)
+            await MainActor.run {
+                guard let self, let text, text != self.rawText else { return }
+                self.rawText = text
+            }
         }
     }
 
