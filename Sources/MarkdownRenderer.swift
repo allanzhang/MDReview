@@ -141,7 +141,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// 若每次重读 Bundle + 处理字体路径会放大打开文档时的主线程卡顿。
     /// （stored property initializer 不能引用 Self 方法，故读取逻辑直接内联于闭包。）
     /// mermaid.min.js 较大（约 3.5MB），**按需内联**：仅当文档含 mermaid 代码块才注入，普通文档零负担。
-    private static let bundled: (readerCSS: String, katexCSS: String, md: String, kx: String, ar: String, footnote: String, hljs: String, hljsLight: String, hljsDark: String, mermaid: String) = {
+    private static let bundled: (readerCSS: String, katexCSS: String, md: String, kx: String, ar: String, footnote: String, hljs: String, hljsLight: String, hljsDark: String, mermaid: String, mdPlugins: String) = {
         let bundle = Bundle.main
         let readerCSS = (try? String(contentsOf: bundle.url(forResource: "reader", withExtension: "css")!)) ?? ""
         var kcss = (try? String(contentsOf: bundle.url(forResource: "katex.min", withExtension: "css")!)) ?? ""
@@ -160,7 +160,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
                 (try? String(contentsOf: bundle.url(forResource: "highlight.min", withExtension: "js")!)) ?? "",
                 (try? String(contentsOf: bundle.url(forResource: "github.min", withExtension: "css")!)) ?? "",
                 (try? String(contentsOf: bundle.url(forResource: "github-dark.min", withExtension: "css")!)) ?? "",
-                (try? String(contentsOf: bundle.url(forResource: "mermaid.min", withExtension: "js")!)) ?? "")
+                (try? String(contentsOf: bundle.url(forResource: "mermaid.min", withExtension: "js")!)) ?? "",
+                (try? String(contentsOf: bundle.url(forResource: "md-plugins.min", withExtension: "js")!)) ?? "")
     }()
     private static let headHTML: String = {
         let b = bundled
@@ -168,7 +169,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     }()
     private static let scriptsHTML: String = {
         let b = bundled
-        return "<script>\(b.md)</script><script>\(b.kx)</script><script>\(b.ar)</script><script>\(b.footnote)</script><script>\(b.hljs)</script><script>\(jsFunctions)</script>"
+        return "<script>\(b.md)</script><script>\(b.kx)</script><script>\(b.ar)</script><script>\(b.footnote)</script><script>\(b.hljs)</script><script>\(b.mdPlugins)</script><script>\(jsFunctions)</script>"
     }()
 
     /// 把 markdown-it / katex 的 JS、CSS 全部内联进 HTML，避免 file:// 跨源加载问题。
@@ -290,6 +291,16 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
           try {
             window.__mdit = window.markdownit({html:true, linkify:true, typographer:true, breaks:true});
             if(window.markdownitFootnote){ try { window.__mdit.use(window.markdownitFootnote); } catch(e){} }
+            // MD 语法扩展：emoji 短码 / ==高亮== / ~下标~ / ^上标^ / 定义列表（md-plugins.min.js 打包暴露）
+            if(window.mdPlugins){
+              try {
+                if(window.mdPlugins.emoji){ window.__mdit.use(window.mdPlugins.emoji); }
+                if(window.mdPlugins.mark){ window.__mdit.use(window.mdPlugins.mark); }
+                if(window.mdPlugins.sub){ window.__mdit.use(window.mdPlugins.sub); }
+                if(window.mdPlugins.sup){ window.__mdit.use(window.mdPlugins.sup); }
+                if(window.mdPlugins.deflist){ window.__mdit.use(window.mdPlugins.deflist); }
+              } catch(e){}
+            }
             var src = \#(mdJSON);
             var html = window.__mdit.render(src);
             html = html.replace(/<li>\s*\[ \]\s+/g, '<li class="task"><input type="checkbox" disabled> ')
@@ -299,7 +310,19 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             if(window.hljs){ try { document.querySelectorAll('#content pre code').forEach(function(b){ window.hljs.highlightElement(b); }); } catch(e){} }
             var heads = el.querySelectorAll('h1,h2,h3,h4,h5,h6');
             var outline = [];
-            heads.forEach(function(h, i){ if(!h.id){ h.id = 'h-' + i; } outline.push({level: parseInt(h.tagName.substring(1)), text: h.textContent, id: h.id}); });
+            heads.forEach(function(h, i){
+              if(!h.id){ h.id = 'h-' + i; }
+              outline.push({level: parseInt(h.tagName.substring(1)), text: h.textContent, id: h.id});
+            });
+            // 标题锚点链接（hover 显示 #）。放在 outline 收集之后注入，避免污染大纲文本
+            heads.forEach(function(h){
+              var anc = document.createElement('a');
+              anc.className = 'header-anchor';
+              anc.href = '#' + h.id;
+              anc.setAttribute('aria-hidden', 'true');
+              anc.textContent = '#';
+              h.insertBefore(anc, h.firstChild);
+            });
             if(window.renderMathInElement){ try { renderMathInElement(el, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false}); } catch(e){} }
             // Mermaid 按需渲染：仅当库已内联（文档含 mermaid 代码块）且存在代码块时执行。
             // 取舍原则：语法错误/渲染异常一律 catch 保留原代码块（降级展示），绝不让图表问题阻塞阅读。

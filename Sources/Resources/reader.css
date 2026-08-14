@@ -127,3 +127,35 @@ mark.srch-cur { background: #ffb703; color: #1f2328; }
   max-width: 100%;
   height: auto;
 }
+
+/* ==mark== 高亮（与搜索 .srch 区分） */
+#content mark { background: #fff3a0; color: inherit; padding: 0 2px; border-radius: 2px; }
+
+/* 定义列表 */
+#content dl { margin: 1em 0; }
+#content dl dt { font-weight: 600; margin-top: 0.6em; }
+#content dl dd { margin: 0.15em 0 0 1.6em; color: #57606a; }
+
+/* 标题锚点链接：hover 标题时显示 # */
+#content .header-anchor {
+  opacity: 0;
+  margin-left: 0.35em;
+  font-size: 0.78em;
+  font-weight: 400;
+  color: #57606a;
+  text-decoration: none;
+  transition: opacity 0.12s;
+}
+#content h1:hover .header-anchor,
+#content h2:hover .header-anchor,
+#content h3:hover .header-anchor,
+#content h4:hover .header-anchor,
+#content h5:hover .header-anchor,
+#content h6:hover .header-anchor { opacity: 1; }
+
+/* 暗色适配：mark 高亮 / 定义列表 / 锚点 */
+@media (prefers-color-scheme: dark) {
+  #content mark { background: #9e7b00; color: #fff; }
+  #content dl dd { color: #8b949e; }
+  #content .header-anchor { color: #8b949e; }
+}

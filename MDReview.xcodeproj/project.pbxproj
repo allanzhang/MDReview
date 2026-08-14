@@ -11,6 +11,7 @@
 		048FE271FDC5D0FAD6AA0EA0 /* KaTeX_Size3-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = EB4D6F6104551C43345B3C40 /* KaTeX_Size3-Regular.woff2 */; };
 		0B28090B27BF3FC5C89BA007 /* highlight.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 6E546F0900486F133CC182CF /* highlight.min.js */; };
 		1973DB96AA446E838E40C7A0 /* KaTeX_Typewriter-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = 297FEE949C371F6AB57F52BB /* KaTeX_Typewriter-Regular.woff2 */; };
+		1AAD930527E80B4A4CF9D45F /* md-plugins.min.js in Resources */ = {isa = PBXBuildFile; fileRef = BF4B47C5E29D261D90001B47 /* md-plugins.min.js */; };
 		211CDCCC0308A70A0029F5A8 /* KaTeX_Size4-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = B426F15E06B9964ED924DE5B /* KaTeX_Size4-Regular.woff2 */; };
 		24D7BDAF41E5EF8B18D03B19 /* KaTeX_SansSerif-Bold.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = 6C7F6DD39CD89251EE4812B1 /* KaTeX_SansSerif-Bold.woff2 */; };
 		28447331B8010A446D575634 /* mermaid.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 820C57F784C6B3AE26E486B9 /* mermaid.min.js */; };
@@ -71,6 +72,7 @@
 		AB4E8B53C6BE0AD23E9526A0 /* KaTeX_Math-BoldItalic.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Math-BoldItalic.woff2"; sourceTree = "<group>"; };
 		B426F15E06B9964ED924DE5B /* KaTeX_Size4-Regular.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Size4-Regular.woff2"; sourceTree = "<group>"; };
 		B88D9F2419DB3ACA21C204E9 /* reader.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = reader.css; sourceTree = "<group>"; };
+		BF4B47C5E29D261D90001B47 /* md-plugins.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "md-plugins.min.js"; sourceTree = "<group>"; };
 		C10C9BC090B575DBD6C47D94 /* KaTeX_Size2-Regular.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Size2-Regular.woff2"; sourceTree = "<group>"; };
 		CAACBADB0D9ACC1D73DB3A2F /* KaTeX_Math-Italic.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Math-Italic.woff2"; sourceTree = "<group>"; };
 		CEEB2D58A074D416F62622C4 /* KaTeX_Main-Italic.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Main-Italic.woff2"; sourceTree = "<group>"; };
@@ -157,6 +159,7 @@
 				57DFF9067B7CB4686051BA5A /* katex.min.js */,
 				3D02FB9EFDE26A41ADCEBCD0 /* markdown-it-footnote.min.js */,
 				3EC7CBB60343263839F5D098 /* markdown-it.min.js */,
+				BF4B47C5E29D261D90001B47 /* md-plugins.min.js */,
 				820C57F784C6B3AE26E486B9 /* mermaid.min.js */,
 				B88D9F2419DB3ACA21C204E9 /* reader.css */,
 				FDC97A8F9323D28F31DD78D5 /* katex */,
@@ -256,6 +259,7 @@
 				9FC8F3D20D84BB68FABA673D /* katex.min.js in Resources */,
 				AE484DFA235AC9B97DA54D67 /* markdown-it-footnote.min.js in Resources */,
 				A6C786DCE048CDB90F7828F0 /* markdown-it.min.js in Resources */,
+				1AAD930527E80B4A4CF9D45F /* md-plugins.min.js in Resources */,
 				28447331B8010A446D575634 /* mermaid.min.js in Resources */,
 				BAC04F6A066C8F0BA0CA652F /* reader.css in Resources */,
 			);
