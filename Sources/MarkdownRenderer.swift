@@ -83,6 +83,24 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         webView.evaluateJavaScript("scrollToHeading(\(Self.jsonString(for: id)))", completionHandler: nil)
     }
 
+    /// 导出当前渲染结果为 PDF（多页，含代码高亮 / KaTeX / 样式，与屏幕渲染一致）。
+    /// 基于 WKWebView 原生 createPDF（macOS 11+，completionHandler 版本经 continuation 包装），无额外依赖。
+    func exportPDF(to url: URL) async throws {
+        guard pageLoaded else { throw ExportError.pageNotLoaded }
+        let config = WKPDFConfiguration()
+        let data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+            webView.createPDF(configuration: config) { result in
+                switch result {
+                case .success(let pdfData):
+                    continuation.resume(returning: pdfData)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+        try data.write(to: url, options: .atomic)
+    }
+
     func search(_ term: String) {
         guard pageLoaded else { return }
         let script = "doSearch(\(Self.jsonString(for: term)))"
@@ -154,7 +172,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// 把 markdown-it / katex 的 JS、CSS 全部内联进 HTML，避免 file:// 跨源加载问题。
     /// 图片相对路径由 WebView 的 baseURL（.md 目录）解析。
     /// markdown 内容直接内联，页面加载即完成渲染并回传大纲，单次导航更稳健。
-    private static func htmlTemplate(markdown: String) -> String {
+    /// internal：导出 HTML 也复用同一模板（自包含、离线可开）。
+    static func htmlTemplate(markdown: String) -> String {
         let mdJSON = jsonString(for: markdown)
         // 页面加载时立即渲染并回传大纲
         let renderScript = "<script>\(jsRenderInline(mdJSON: mdJSON))</script>"
@@ -321,5 +340,22 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         renderer?.didFinishNavigation()
+    }
+}
+
+/// 导出相关错误。
+enum ExportError: LocalizedError {
+    /// 页面仍在渲染（pageLoaded 闸门未通过），导出会拿到空白/半成品。
+    case pageNotLoaded
+    /// createPDF 未返回数据也未报错（异常分支）。
+    case pdfGenerationFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .pageNotLoaded:
+            return "The document is still rendering. Try again in a moment."
+        case .pdfGenerationFailed:
+            return "Failed to generate PDF."
+        }
     }
 }

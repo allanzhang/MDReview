@@ -104,6 +104,16 @@ struct ContentView: View {
                 .keyboardShortcut("e", modifiers: .command)
                 .disabled(doc.url == nil)
         }
+        ToolbarItem(placement: .automatic) {
+            Menu {
+                Button("Export as HTML…") { exportHTML() }
+                Button("Export as PDF…") { exportPDF() }
+            } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
+            }
+            .help("Export Document")
+            .disabled(doc.url == nil)
+        }
     }
 
     private func renderCurrent() {
@@ -146,6 +156,47 @@ struct ContentView: View {
             }
         }
         return false
+    }
+
+    /// 导出为自包含 HTML（内联全部渲染依赖，离线可开，与阅读效果一致）。
+    private func exportHTML() {
+        guard let url = doc.url else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.html]
+        panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + ".html"
+        panel.directoryURL = url.deletingLastPathComponent()
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        do {
+            let html = MarkdownRenderer.htmlTemplate(markdown: doc.rawText)
+            try html.write(to: dest, atomically: true, encoding: .utf8)
+        } catch {
+            presentExportError(error)
+        }
+    }
+
+    /// 导出为 PDF（基于当前渲染结果，多页分页，含高亮/公式/样式）。
+    private func exportPDF() {
+        guard let url = doc.url else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + ".pdf"
+        panel.directoryURL = url.deletingLastPathComponent()
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        Task {
+            do {
+                try await renderer.exportPDF(to: dest)
+            } catch {
+                await MainActor.run { presentExportError(error) }
+            }
+        }
+    }
+
+    private func presentExportError(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = "Export Failed"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 
     /// 用外部编辑器打开当前文件：优先 Cursor / VSCode，未检测到则退回系统默认关联应用。

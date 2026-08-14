@@ -94,3 +94,23 @@ mark.srch-cur { background: #ffb703; color: #1f2328; }
   mark.srch { background: #9e7b00; color: #fff; }
   mark.srch-cur { background: #ffb703; color: #0d1117; }
 }
+
+/* 打印 / PDF 导出：强制浅色底，避免暗色主题耗墨；控制分页断点 */
+@media print {
+  html { color-scheme: light; }
+  html, body { background: #ffffff !important; }
+  body { color: #1f2328 !important; }
+  #content h1, #content h2 { border-color: #d0d7de !important; }
+  #content a { color: #0969da !important; }
+  #content code { background: #eff1f3 !important; }
+  #content pre { background: #f6f8fa !important; border-color: #d0d7de !important; }
+  #content blockquote { border-color: #d0d7de !important; color: #57606a !important; }
+  #content th, #content td { border-color: #d0d7de !important; }
+  #content th { background: #f6f8fa !important; }
+  #content hr { border-color: #d0d7de !important; }
+  #content .footnotes { color: #57606a !important; }
+  /* 关键分页控制：代码块/表格/图片整体不跨页，标题后不直接断页 */
+  #content pre, #content table, #content img, #content .math-display { page-break-inside: avoid; }
+  #content h1, #content h2, #content h3, #content h4, #content h5, #content h6 { page-break-after: avoid; }
+  mark.srch, mark.srch-cur { background: #fff3a0 !important; color: #1f2328 !important; }
+}
