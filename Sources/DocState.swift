@@ -1,6 +1,13 @@
 import Foundation
 import SwiftUI
 
+/// 外观模式：跟随系统 / 强制亮 / 强制暗（默认跟随系统，可手动切换）。
+enum AppearanceMode: String {
+    case system = "system"
+    case light = "light"
+    case dark = "dark"
+}
+
 /// 全局文档状态：当前打开的 .md、原文、最近文件列表、大纲显隐。
 /// 用单例是因为 AppDelegate 的 openURLs 也需要写入同一份状态。
 @MainActor final class DocState: ObservableObject {
@@ -14,8 +21,11 @@ import SwiftUI
     @Published var columnVisibility: NavigationSplitViewVisibility = .all
     /// 渲染 / 源码 只读切换。
     @Published var showSource = false
+    /// 外观模式（跟随系统/强制亮/强制暗），UserDefaults 持久化。
+    @Published var appearance: AppearanceMode = .system
 
     private let recentKey = "mdreview.recent"
+    private let appearanceKey = "mdreview.appearance"
     private let recentMax = 30
     /// 当前文件系统监听（外部编辑器保存后自动重载，AI 工作流刚需）。
     private var fileMonitor: DispatchSourceFileSystemObject?
@@ -23,6 +33,13 @@ import SwiftUI
 
     init() {
         loadRecent()
+        appearance = AppearanceMode(rawValue: UserDefaults.standard.string(forKey: appearanceKey) ?? "") ?? .system
+    }
+
+    /// 设置外观模式并持久化（渲染层经 renderer.applyAppearance 即时生效，无需重载）。
+    func setAppearance(_ mode: AppearanceMode) {
+        appearance = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: appearanceKey)
     }
 
     func open(_ url: URL) {

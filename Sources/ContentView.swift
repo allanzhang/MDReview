@@ -21,6 +21,8 @@ struct ContentView: View {
         .navigationSplitViewStyle(.balanced)
         // 打开文档与外部编辑热更新都会更新 rawText，统一由此触发渲染（url 变化必伴随 rawText 变化）
         .onChange(of: doc.rawText) { _, _ in DispatchQueue.main.async { renderCurrent() } }
+        // 外观切换：即时注入 JS 生效，不重载页面（保留滚动位置与渲染状态）
+        .onChange(of: doc.appearance) { _, mode in renderer.applyAppearance(mode) }
         .onAppear { DispatchQueue.main.async { renderCurrent() } }
     }
 
@@ -91,6 +93,32 @@ struct ContentView: View {
             Button { showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }
                 .help("Search in Document")
         }
+        // 外观切换：跟随系统 / 强制亮 / 强制暗（即时生效不重载）
+        ToolbarItem(placement: .automatic) {
+            Menu {
+                Button {
+                    doc.setAppearance(.system)
+                } label: {
+                    if doc.appearance == .system { Label("System", systemImage: "checkmark") }
+                    else { Text("System") }
+                }
+                Button {
+                    doc.setAppearance(.light)
+                } label: {
+                    if doc.appearance == .light { Label("Light", systemImage: "checkmark") }
+                    else { Text("Light") }
+                }
+                Button {
+                    doc.setAppearance(.dark)
+                } label: {
+                    if doc.appearance == .dark { Label("Dark", systemImage: "checkmark") }
+                    else { Text("Dark") }
+                }
+            } label: {
+                Label("Appearance", systemImage: "sun.moon")
+            }
+            .help("Appearance")
+        }
         ToolbarItem(placement: .automatic) {
             Button {
                 withAnimation { doc.showSource.toggle() }
@@ -125,7 +153,8 @@ struct ContentView: View {
         renderer.searchCount = 0
         renderer.searchCurrent = 0
         searchText = ""
-        renderer.render(doc.rawText, baseURL: url.deletingLastPathComponent(), docName: url.lastPathComponent)
+        renderer.render(doc.rawText, baseURL: url.deletingLastPathComponent(),
+                        docName: url.lastPathComponent, appearance: doc.appearance)
     }
 
     private func openPanel() {
@@ -168,8 +197,8 @@ struct ContentView: View {
         panel.directoryURL = url.deletingLastPathComponent()
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         do {
-            // 导出 HTML：full 模式强制全量渲染，保证备份完整（不启用分块懒渲染）
-            let html = MarkdownRenderer.htmlTemplate(markdown: doc.rawText, chunkMode: "full")
+            // 导出 HTML：full 模式强制全量渲染保证备份完整；外观跟随打开者系统（不固化当前模式）
+            let html = MarkdownRenderer.htmlTemplate(markdown: doc.rawText, chunkMode: "full", appearance: .system)
             try html.write(to: dest, atomically: true, encoding: .utf8)
         } catch {
             presentExportError(error)

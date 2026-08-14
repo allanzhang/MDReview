@@ -1,3 +1,4 @@
+/* 默认跟随系统明暗；JS 按外观模式（system/light/dark）覆盖 documentElement.style.colorScheme */
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: #ffffff; }
@@ -77,23 +78,21 @@ mark.srch-cur { background: #ffb703; color: #1f2328; }
 /* 让 hljs 主题只负责 token 颜色，容器背景交给 pre，避免代码块内层出现白块 */
 #content pre code.hljs { background: transparent; padding: 0; }
 
-/* 跟随系统暗色模式 */
-@media (prefers-color-scheme: dark) {
-  html, body { background: #0d1117; }
-  body { color: #c9d1d9; }
-  #content h1, #content h2 { border-color: #21262d; }
-  #content a { color: #58a6ff; }
-  #content code { background: #161b22; }
-  #content pre { background: #161b22; border-color: #30363d; }
-  #content blockquote { border-color: #30363d; color: #8b949e; }
-  #content th, #content td { border-color: #30363d; }
-  #content th { background: #161b22; }
-  #content hr { border-color: #30363d; }
-  #content .footnotes { color: #8b949e; }
-  #content .footnotes-sep { border-color: #21262d; }
-  mark.srch { background: #9e7b00; color: #fff; }
-  mark.srch-cur { background: #ffb703; color: #0d1117; }
-}
+/* 暗色主题：由 JS 根据外观模式（跟随系统/强制亮/强制暗）控制 body.theme-dark class。
+   不再依赖 @media (prefers-color-scheme)，手动切换才可能。 */
+body.theme-dark { background: #0d1117; color: #c9d1d9; }
+body.theme-dark #content h1, body.theme-dark #content h2 { border-color: #21262d; }
+body.theme-dark #content a { color: #58a6ff; }
+body.theme-dark #content code { background: #161b22; }
+body.theme-dark #content pre { background: #161b22; border-color: #30363d; }
+body.theme-dark #content blockquote { border-color: #30363d; color: #8b949e; }
+body.theme-dark #content th, body.theme-dark #content td { border-color: #30363d; }
+body.theme-dark #content th { background: #161b22; }
+body.theme-dark #content hr { border-color: #30363d; }
+body.theme-dark #content .footnotes { color: #8b949e; }
+body.theme-dark #content .footnotes-sep { border-color: #21262d; }
+body.theme-dark mark.srch { background: #9e7b00; color: #fff; }
+body.theme-dark mark.srch-cur { background: #ffb703; color: #0d1117; }
 
 /* 打印 / PDF 导出：强制浅色底，避免暗色主题耗墨；控制分页断点 */
 @media print {
@@ -154,8 +153,6 @@ mark.srch-cur { background: #ffb703; color: #1f2328; }
 #content h6:hover .header-anchor { opacity: 1; }
 
 /* 暗色适配：mark 高亮 / 定义列表 / 锚点 */
-@media (prefers-color-scheme: dark) {
-  #content mark { background: #9e7b00; color: #fff; }
-  #content dl dd { color: #8b949e; }
-  #content .header-anchor { color: #8b949e; }
-}
+body.theme-dark #content mark { background: #9e7b00; color: #fff; }
+body.theme-dark #content dl dd { color: #8b949e; }
+body.theme-dark #content .header-anchor { color: #8b949e; }

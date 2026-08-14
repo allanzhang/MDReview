@@ -58,9 +58,16 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
 
     /// 用内联了 markdown 的 HTML 重新加载页面。baseURL 设为 .md 所在目录，使相对图片路径可解析。
     /// docName 为文件名，用于阅读进度记忆（localStorage key 区分不同文档）。
-    func render(_ markdown: String, baseURL: URL?, docName: String? = nil) {
+    func render(_ markdown: String, baseURL: URL?, docName: String? = nil, appearance: AppearanceMode = .system) {
         pageLoaded = false
-        webView.loadHTMLString(Self.htmlTemplate(markdown: markdown, docName: docName, chunkMode: "auto"), baseURL: baseURL)
+        webView.loadHTMLString(Self.htmlTemplate(markdown: markdown, docName: docName, chunkMode: "auto", appearance: appearance), baseURL: baseURL)
+    }
+
+    /// 手动切换外观模式（不重载页面，直接注入 JS 生效，保留滚动位置与渲染状态）。
+    func applyAppearance(_ mode: AppearanceMode) {
+        guard pageLoaded else { return }
+        let script = "window.__forceTheme = '\(mode.rawValue)'; window.applyTheme && window.applyTheme();"
+        webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
     /// 页面导航完成后回调：兜底再读一次 window.__outline，确保大纲一定能拿到。
@@ -181,7 +188,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     }()
     private static let headHTML: String = {
         let b = bundled
-        return "<style>\(b.readerCSS)\n\(b.katexCSS)\n\(b.hljsLight)\n@media (prefers-color-scheme: dark){ \(b.hljsDark) }</style>"
+        // hljsDark 已 scoped（body.theme-dark 前缀），不再包 @media，改由 JS 按 class 控制
+        return "<style>\(b.readerCSS)\n\(b.katexCSS)\n\(b.hljsLight)\n\(b.hljsDark)</style>"
     }()
     private static let scriptsHTML: String = {
         let b = bundled
@@ -194,15 +202,18 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// internal：导出 HTML 也复用同一模板（自包含、离线可开）。
     /// mermaid 按需：仅当 markdown 含 ```mermaid 代码块才内联约 3.5MB 渲染库，普通文档零负担。
     /// chunkMode：阅读传 "auto"（大文档自动分块懒渲染），导出传 "full"（强制全量保证备份完整）。
-    static func htmlTemplate(markdown: String, docName: String? = nil, chunkMode: String = "auto") -> String {
+    /// appearance：渲染时的外观模式（跟随系统/强制亮/强制暗），导出 HTML 传 .system 跟随打开者系统。
+    static func htmlTemplate(markdown: String, docName: String? = nil, chunkMode: String = "auto", appearance: AppearanceMode = .system) -> String {
         let mdJSON = jsonString(for: markdown)
         let renderScript = "<script>\(jsRenderInline(mdJSON: mdJSON, chunkMode: chunkMode))</script>"
         // 注入文件名供阅读进度记忆使用（localStorage key 区分不同文档）
         let docNameScript = "<script>window.__docName = \(jsonString(for: docName ?? ""));</script>"
+        // 注入外观模式供 applyTheme 使用
+        let themeScript = "<script>window.__forceTheme = '\(appearance.rawValue)';</script>"
         let mermaidScript = markdown.contains("```mermaid") ? "<script>\(bundled.mermaid)</script>" : ""
 
         return """
-        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(headHTML)\(scriptsHTML)\(docNameScript)\(mermaidScript)</head>
+        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(headHTML)\(scriptsHTML)\(docNameScript)\(themeScript)\(mermaidScript)</head>
         <body><article id="content"></article>\(renderScript)</body></html>
         """
     }
@@ -348,6 +359,22 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     }, {passive:true});
     // 图片等资源异步加载会改变布局，load 后重算标题坐标缓存
     window.addEventListener('load', window.__recomputeHeads);
+    // —— 外观主题：由 __forceTheme（'system'|'light'|'dark'）决定，默认跟随系统 ——
+    window.applyTheme = function(){
+      var mode = window.__forceTheme || 'system';
+      var dark = (mode === 'dark') || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      window.__isDark = dark;
+      document.documentElement.classList.toggle('theme-dark', dark);
+      document.body.classList.toggle('theme-dark', dark);
+      document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+      document.documentElement.style.background = dark ? '#0d1117' : '#ffffff';
+    };
+    // 跟随系统模式下，系统切换外观时自动响应；手动模式不响应
+    if(window.matchMedia){
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){
+        if(!window.__forceTheme || window.__forceTheme === 'system'){ window.applyTheme(); }
+      });
+    }
     """#
 
     /// 页面加载时执行的渲染 + 大纲回传 IIFE。mdJSON 已是合法 JS 字符串字面量，直接内联。
@@ -356,6 +383,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         #"""
         (function(){
           try {
+            // 页面加载即应用外观主题（跟随系统/强制亮/强制暗）
+            window.applyTheme && window.applyTheme();
             window.__mdit = window.markdownit({html:true, linkify:true, typographer:true, breaks:true});
             if(window.markdownitFootnote){ try { window.__mdit.use(window.markdownitFootnote); } catch(e){} }
             if(window.mdPlugins){
@@ -438,7 +467,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
                 if(!window.__mermaidInit){
                   window.mermaid.initialize({
                     startOnLoad: false, securityLevel: 'strict',
-                    theme: (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'default',
+                    // 跟随实际生效主题（手动模式也一致），而非直接读系统 matchMedia
+                    theme: window.__isDark ? 'dark' : 'default',
                     fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif'
                   });
                   window.__mermaidInit = true;
