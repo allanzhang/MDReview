@@ -8,63 +8,70 @@ SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读�
 - 想常驻：`xcodebuild -configuration Release` 构建一份，拖进「应用程序」文件夹。
 
 ## 打开文件
-- 工具栏「打开」按钮（`NSOpenPanel`，快捷键 `Cmd+O`）
+- 工具栏「打开」或 **File > Open…**（`Cmd+O`，`NSOpenPanel`）
 - 直接把 `.md` 拖进窗口（拖拽悬停有高亮反馈）
 - Finder 右键 `.md` → 打开方式 → MDReview（已配置 `.md` / `.markdown` 文档关联）
-- 最近文件列表（`UserDefaults` 持久化，启动时过滤失效路径）
+- **File > Open Recent** 最近文档菜单 + 侧栏 Recent 列表（`UserDefaults` 持久化，启动时过滤失效路径；可右键移除 / 清空）
+- **启动恢复**：自动重开上次文档，并记住窗口位置/大小、侧栏显隐
 
 ## 功能
 
 ### 渲染（MD 语法全家桶，全部离线内置）
 - **GFM**：表格 / 任务列表 / 删除线 / 单换行即换行（`breaks`，符合国内文档习惯）
-- **KaTeX 数学公式**：`$...$` / `$$...$$`
+- **KaTeX 数学公式**：`$...$` / `$$...$$`（math 行内规则先拦截再渲染，防 markdown-it 破坏）
 - **Mermaid 图表**：按需加载（文档含 ` ```mermaid ` 才内联渲染库），失败降级保留原代码
 - **代码高亮**：`highlight.js` 36 语言，亮/暗双主题；大文档分帧渐进高亮不阻塞首屏
-- **扩展语法**：emoji、`==高亮==`、上下标、定义列表、脚注（footnote）
+- **扩展语法**：emoji、`==高亮==`、单波浪线按内容分下标/删除线（`H~2~O` / `~文字~`）、上标、定义列表、脚注
 - **标题锚点**：悬停显示 `#` 链接，支持 `#` 片段跳转
 - **图片**：相对路径按 `.md` 所在目录解析，`loading="lazy"` + `decoding="async"` 懒加载
+- **字号跟随系统**：正文基准字号读系统 body 文本样式（放大系统字号，正文/标题/代码等比缩放）
 
 ### 导航
-- **大纲双向同步**：侧栏 Outline 点选跳转；滚动时反向高亮当前章节
+- **大纲双向同步**：侧栏 Outline 点选跳转；滚动时反向高亮当前章节（激活加粗、次级标题降灰）
 - **超大文档分块懒渲染**：>25 万字符自动按标题切分，初始渲染 6 段、滚动渐进加载——大文件秒开、滑动流畅（大纲跳转/进度恢复会自动先渲染目标段）
 
 ### 阅读工具
-- **全文搜索**：`Cmd+F` 呼出 Spotlight 式悬浮面板（NSVisualEffectView 高斯模糊，融入工具栏按钮区域），输入 250ms 防抖、上/下跳转、命中计数
-- **渲染 / 源码对照**：More 菜单切换（只读、等宽、可选中）
+- **全文搜索**：`Cmd+F` 呼出 Spotlight 式悬浮面板（高斯模糊，融入工具栏按钮区域）；输入 250ms 防抖、**Enter 下一个 / Shift+Enter 上一个**、Esc 关闭、命中计数、**无匹配显示 0 results**、有选中文字自动预填
+- **渲染 / 源码对照**：View 菜单切换（只读、等宽、可选中）
 - **外部编辑器**：`Cmd+E`，优先 Cursor / VSCode，未装退回系统默认关联应用
-- **阅读进度记忆**：按章节 id 存 localStorage（key 含文件名防串档），重开自动回到上次位置
+- **阅读进度记忆**：按章节 id 存 **Swift/UserDefaults**（非 localStorage），重开自动回到上次位置
 - **文件热更新**：监听当前文件，外部编辑器保存后 400ms 防抖自动重载；文件删除自动停止监听
+- **右键菜单**：正文（Copy / Reveal in Finder / 外部编辑器 / 导出 HTML/PDF）、Recent 行（显示位置 / 复制路径 / 外部编辑器 / 移除）、Outline 行（复制标题）
 
 ### 外观
-- **三态外观**：默认跟随系统；工具栏太阳/月亮按钮单击临时切换亮/暗（accent 高亮显示状态），再点回跟随，重启始终回到跟随系统
+- **三态外观**：默认跟随系统；工具栏月亮/太阳按钮单击临时切换亮/暗（图标表示"点击后切换的方向"），再点回跟随，重启始终回到跟随系统
+- **dark 主题**：VS Code「Dark Modern」调色（`#1f1f1f` 背景，非纯黑）
 - 内容区、代码块、Mermaid、全部 UI 组件随外观联动（AppKit 层 `NSApp.appearance` 强制同步，无闪烁回退）
 
 ### 备份导出
 - **导出 HTML**：静态预渲染快照（KaTeX / 高亮 / Mermaid 成品内联），**无 JS 依赖**——macOS 预览（空格）、QuickLook、Chrome 打开所见即所得
 - **导出 PDF**：WKWebView 原生分页，与屏幕渲染一致（分块模式先强制渲染全文）
+- 导出成功弹居中对齐确认面板，可一键 **Show in Finder**
 
 ### 界面
-- 工具栏精简：Sidebar / Open / Search / 外观 / More / Export，语义分组克制
-- 侧边栏：Outline / History 大按钮切换（图标+文字、选中高亮），列表首尾行圆角、hover 反馈
-- 空状态引导页、窗口标题显示文件名+路径、拖拽高亮
-- Light / Dark 组件层次感分别优化（light 实底+描边，dark 玻璃+边界）
+- **菜单栏**：File（Open…`⌘O` / Open Recent / External Editor…`⌘E` / Export）、View（Sidebar `⌃⌘S` / Source-Rendered / Appearance）；不提供 New Window / Tab
+- **工具栏**：Sidebar / Open / Search `⌘F` / 外观 / Export，语义分组克制
+- **侧栏**：Outline / Recent 切换（图标+文字、选中高亮、无自绘描边），列表首尾行圆角、hover 反馈
+- **阅读进度条**：内容区顶部 2px accent 细条随滚动增长
+- **空状态引导页**（大 Open 按钮）、窗口标题显示文件名 + 目录 + 字数、拖拽高亮
+- **App 图标**：标准 Assets.xcassets（16~512 @1x/@2x 全尺寸集）
 
 ## 工程结构
 ```
 MDReview/                         (工程根目录)
 ├── MDReview.xcodeproj           (由 xcodegen 生成)
-├── MDReview.app                 (编译产物，本机可直接运行)
-├── project.yml                  (xcodegen 配置)
+├── project.yml                  (xcodegen 配置，含 AppIcon 编译设置)
 ├── README.md
 └── Sources/                     (源码文件夹)
-    ├── MDReviewApp.swift        (窗口场景 + AppKit 层外观控制)
-    ├── DocState.swift           (全局状态 + 文件热更新监听 + 异步读盘)
-    ├── MarkdownRenderer.swift   (渲染内核：JS 注入 / 分块渲染 / 搜索 / 导出)
-    ├── ContentView.swift        (主界面：工具栏 / 侧栏 / 搜索条 / 空状态)
+    ├── MDReviewApp.swift        (App 入口 + 菜单命令 + AppKit 外观控制)
+    ├── DocState.swift           (全局状态 + 文件热更新 + 最近/侧栏/上次文档记忆)
+    ├── MarkdownRenderer.swift   (渲染内核：JS 注入 / 分块渲染 / 搜索 / 导出 / 进度回传)
+    ├── ContentView.swift        (主界面：工具栏 / 侧栏 / 搜索条 / 空状态 / 进度条)
     ├── OutlineView.swift        (大纲列表)
     ├── RecentView.swift         (最近文件列表)
     ├── SearchPanel.swift        (Spotlight 式浮动搜索面板)
     ├── ReaderWebView.swift
+    ├── Assets.xcassets          (App 图标)
     ├── Info.plist
     └── Resources/               (markdown-it / KaTeX / highlight.js / mermaid 等，全部内置离线)
 ```
@@ -74,11 +81,12 @@ MDReview/                         (工程根目录)
 - 所有依赖 JS/CSS/字体**全部内置，完全离线，零网络**
 - 关键机制：
   - **单次导航**：markdown 经 `jsonString` 转义（含 `</script>` 防护）内联进 HTML 一次性加载
-  - **大纲回传**：页面脚本渲染后 `postMessage` 回推 Swift；滚动经独立消息通道回传当前章节
+  - **消息通道**：页面脚本 `postMessage` 回推大纲 / 当前章节 / 阅读进度（0~1）到 Swift
   - **分块渲染**：`scanAndSplit` 按标题切分（跳过代码围栏），大纲统一由扫描生成，滚动渐进加载
   - **`pageLoaded` 闸门**：页面未就绪时一律跳过 `evaluateJavaScript`，杜绝报错
+  - **菜单动作总线**：File/View 菜单命令经 NotificationCenter 转发给主界面执行
 
 ## 已知限制 / 明确不做
 - **目录树**：暂缓（依赖它的批量跨文件搜索、侧栏过滤一并延后）
-- 明确不做：编辑、个性化排版、云同步、插件、主题商城、`.txt`/`.rst` 等非 Markdown 格式
+- 明确不做：编辑、个性化排版、云同步、插件、主题商城、`.txt`/`.rst` 等非 Markdown 格式、多 Tab
 - 无标题的超大文档无切分点，走全量渲染；分块模式下搜索仅覆盖已渲染部分（懒渲染固有行为）
