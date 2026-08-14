@@ -19,6 +19,9 @@ import SwiftUI
 ///   convertToScreen 转换后 setFrameOrigin（单位混用是"飞到窗外"的根源）。
 /// - 缩放时保留 didResize 观察者：窗口变宽/变窄会使工具栏按钮重排（Open↔Search
 ///   中点水平移动），需重测面板位置；拖动移动由 childWindow 原生跟随，不需要监听。
+/// - **模糊保持**：behindWindow 模糊只在窗口 active（key/main）时渲染，点击主窗口空白处
+///   会让面板失焦 → 模糊掉。面板打开期间失焦即抢回 key（应用前台且非主动关闭时），
+///   模糊保持到主动关闭；应用切后台不抢（重进前台时恢复）。
 /// - 【尺寸缓存】——重定位时尺寸不变则跳过 setContentSize，只 setFrameOrigin。
 /// - 垂直：直接量 Open/Search 按钮视图的实际坐标——面板高度 = 按钮背景高度，
 ///   垂直居中于按钮行（不猜 chrome，不贴窗口顶；标题栏/工具栏高度随系统/外观变化，
@@ -28,6 +31,8 @@ import SwiftUI
 
     private var panel: NSPanel?
     private weak var parentWindow: NSWindow?
+    /// 正在主动关闭中：hide() 期间的失焦通知不抢 key。
+    private var isClosing = false
     /// 尺寸缓存：位置不变时跳过 setContentSize（避免反复布局卡顿）。
     private var lastSize: NSSize = .zero
 
@@ -72,6 +77,18 @@ import SwiftUI
         self.panel = panel
         parentWindow = window
 
+        isClosing = false
+        // 面板失焦（点击主窗口空白处）时抢回 key：behindWindow 模糊只在窗口 active 时渲染，
+        // 失焦会让模糊掉。主动关闭（hide）与应用切后台时不抢。
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(panelDidResignKey(_:)),
+            name: NSWindow.didResignKeyNotification, object: panel
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidBecomeActive(_:)),
+            name: NSApplication.didBecomeActiveNotification, object: nil
+        )
+
         observeResize(window)
         // 工具栏可能在面板刚显示时尚未完成布局，稍后重测一次按钮坐标，
         // 避免首次呼出时量到 0 尺寸而回退到 chrome 估算。
@@ -82,10 +99,15 @@ import SwiftUI
     }
 
     func hide() {
+        isClosing = true
         if let panel, let window = parentWindow {
             window.removeChildWindow(panel)
         }
         panel?.orderOut(nil)
+        if let panel {
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: panel)
+        }
+        NotificationCenter.default.removeObserver(self, name: NSApplication.didBecomeActiveNotification, object: nil)
         if let window = parentWindow {
             NotificationCenter.default.removeObserver(self, name: NSWindow.didResizeNotification, object: window)
         }
@@ -180,5 +202,18 @@ import SwiftUI
     @objc private func windowDidResize(_ note: Notification) {
         guard let window = note.object as? NSWindow, let panel, isVisible else { return }
         position(panel, relativeTo: window)
+    }
+
+    /// behindWindow 模糊只在窗口 active（key/main）时渲染：点击主窗口空白处会让主窗口成为
+    /// key、面板失焦 → 模糊掉。面板打开期间失焦就抢回 key 保持模糊，直到主动关闭。
+    @objc private func panelDidResignKey(_ note: Notification) {
+        guard !isClosing, NSApp.isActive, let panel, isVisible else { return }
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    /// 应用从后台切回时（hidesOnDeactivate=false 面板仍在但已失焦），重夺 key 恢复模糊。
+    @objc private func appDidBecomeActive(_ note: Notification) {
+        guard !isClosing, let panel, isVisible else { return }
+        panel.makeKeyAndOrderFront(nil)
     }
 }
