@@ -85,6 +85,16 @@ struct ContentView: View {
             if doc.showSource && doc.url != nil {
                 SourceView(text: doc.rawText)
             }
+            // 搜索框：内容区顶部水平居中，单层原生 NSSearchField（精致、高度矮）
+            if showSearch && doc.url != nil {
+                SearchBar(renderer: renderer,
+                          text: $searchText,
+                          onClose: {
+                              showSearch = false
+                              searchText = ""
+                              renderer.search("")
+                          })
+            }
         }
         .onChange(of: searchText) { _, newValue in
             // 防抖：连续输入不触发搜索，停顿 250ms 后执行一次（避免大文档全文遍历打满 WebContent）
@@ -118,18 +128,6 @@ struct ContentView: View {
         ToolbarItem(placement: .primaryAction) {
             Button { showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }
                 .help("Search in Document")
-        }
-        // 搜索框：呼出时占据工具栏 principal（标题）位置，玻璃卡片、宽度随窗口自适应
-        if showSearch && doc.url != nil {
-            ToolbarItem(placement: .principal) {
-                SearchBar(renderer: renderer,
-                          text: $searchText,
-                          onClose: {
-                              showSearch = false
-                              searchText = ""
-                              renderer.search("")
-                          })
-            }
         }
         // 外观切换：单按钮，太阳/月亮图标高亮代表当前状态。
         // System（默认）→ 点击临时覆盖为相反外观 → 再点回到 System（不持久化）
@@ -394,27 +392,20 @@ struct SourceTextView: NSViewRepresentable {
     }
 }
 
-/// 顶部搜索条：输入实时搜索，支持 上/下 跳转与关闭。
-/// 仅观察 renderer 的 searchCount/searchCurrent，不牵连整树重算。
-/// macOS 26+ 使用系统 Liquid Glass 卡片（.glassEffect），旧系统回退毛玻璃材质。
+/// 搜索条：内容区顶部水平居中。主输入用原生 NSSearchField（单层精致、高度矮、自动适配外观），
+/// 右侧紧凑排列计数与上/下跳转/关闭。仅观察 renderer 的 searchCount/searchCurrent。
 struct SearchBar: View {
     @ObservedObject var renderer: MarkdownRenderer
     @Binding var text: String
     let onClose: () -> Void
-    /// 搜索条出现即聚焦输入框，Cmd 交互直接输入。
-    @FocusState private var isFocused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search", text: $text)
-                .textFieldStyle(.plain)
-                .frame(minWidth: 200, maxWidth: 460)
-                .focused($isFocused)
-                .onAppear { isFocused = true }
+            NativeSearchField(text: $text, onEscape: onClose)
+                .frame(width: 320)
             if renderer.searchCount > 0 {
                 Text("\(renderer.searchCurrent)/\(renderer.searchCount)")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
@@ -430,21 +421,50 @@ struct SearchBar: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(glassBackground)
-        .padding(12)
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// 原生 NSSearchField 包装：单层圆角输入框（无套层）、small 高度、自动聚焦、
+/// 输入即触发、Esc 关闭。macOS 原生控件自动适配明暗外观。
+struct NativeSearchField: NSViewRepresentable {
+    @Binding var text: String
+    var onEscape: () -> Void = {}
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.placeholderString = "Search"
+        field.controlSize = .small
+        field.font = .systemFont(ofSize: 12)
+        field.bezelStyle = .roundedBezel
+        field.sendsSearchStringImmediately = true
+        field.delegate = context.coordinator
+        return field
     }
 
-    @ViewBuilder
-    private var glassBackground: some View {
-        if #available(macOS 26.0, *) {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.regularMaterial)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        } else {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.ultraThinMaterial)
+    func updateNSView(_ nsView: NSSearchField, context: Context) {
+        if nsView.stringValue != text { nsView.stringValue = text }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var parent: NativeSearchField
+
+        init(_ parent: NativeSearchField) { self.parent = parent }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSSearchField else { return }
+            parent.text = field.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                parent.onEscape()
+                return true
+            }
+            return false
         }
     }
 }
