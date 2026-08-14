@@ -85,15 +85,21 @@ struct ContentView: View {
             if doc.showSource && doc.url != nil {
                 SourceView(text: doc.rawText)
             }
-            // 搜索框：Spotlight 式悬浮卡片，横向居中于内容区顶部（标题区域）
+            // 搜索框：Spotlight 式悬浮卡片，覆盖内容区顶部标题区域（横向居中、宽度随内容区自适应）
             if showSearch && doc.url != nil {
-                SearchBar(renderer: renderer,
-                          text: $searchText,
-                          onClose: {
-                              showSearch = false
-                              searchText = ""
-                              renderer.search("")
-                          })
+                GeometryReader { geo in
+                    SearchBar(renderer: renderer,
+                              text: $searchText,
+                              onClose: {
+                                  showSearch = false
+                                  searchText = ""
+                                  renderer.search("")
+                              })
+                    // 宽度自适应：约内容区 55%，限制在 300-640 区间，随窗口缩放
+                    .frame(width: max(300, min(geo.size.width * 0.55, 640)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 12)
+                }
             }
         }
         .onChange(of: searchText) { _, newValue in
@@ -409,7 +415,6 @@ struct SearchBar: View {
             TextField("Search", text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
-                .frame(minWidth: 260, maxWidth: 520)
                 .focused($isFocused)
                 .onAppear { isFocused = true }
             if renderer.searchCount > 0 {
@@ -446,7 +451,5 @@ struct SearchBar: View {
                 .stroke(.separator, lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.22), radius: 24, y: 10)
-        .padding(.top, 10)
-        .frame(maxWidth: .infinity)
     }
 }
