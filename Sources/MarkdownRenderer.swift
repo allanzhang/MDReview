@@ -119,10 +119,10 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         return String(raw.dropFirst().dropLast())
     }
 
-    /// 把 markdown-it / katex 的 JS、CSS 全部内联进 HTML，避免 file:// 跨源加载问题。
-    /// 图片相对路径由 WebView 的 baseURL（.md 目录）解析。
-    /// markdown 内容直接内联，页面加载即完成渲染并回传大纲，单次导航更稳健。
-    private static func htmlTemplate(markdown: String) -> String {
+    /// 静态资源一次性读取缓存：htmlTemplate 每渲染一次都拼接数 MB 字符串，
+    /// 若每次重读 Bundle + 处理字体路径会放大打开文档时的主线程卡顿。
+    /// （stored property initializer 不能引用 Self 方法，故读取逻辑直接内联于闭包。）
+    private static let bundled: (readerCSS: String, katexCSS: String, md: String, kx: String, ar: String, footnote: String, hljs: String, hljsLight: String, hljsDark: String) = {
         let bundle = Bundle.main
         let readerCSS = (try? String(contentsOf: bundle.url(forResource: "reader", withExtension: "css")!)) ?? ""
         var kcss = (try? String(contentsOf: bundle.url(forResource: "katex.min", withExtension: "css")!)) ?? ""
@@ -133,24 +133,34 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             kcss = kcss.replacingOccurrences(of: "url('fonts/", with: "url('\(base)")
             kcss = kcss.replacingOccurrences(of: "url(\"fonts/", with: "url(\"\(base)")
         }
-        let md = (try? String(contentsOf: bundle.url(forResource: "markdown-it.min", withExtension: "js")!)) ?? ""
-        let kx = (try? String(contentsOf: bundle.url(forResource: "katex.min", withExtension: "js")!)) ?? ""
-        let ar = (try? String(contentsOf: bundle.url(forResource: "katex-auto-render.min", withExtension: "js")!)) ?? ""
-        let footnote = (try? String(contentsOf: bundle.url(forResource: "markdown-it-footnote.min", withExtension: "js")!)) ?? ""
-        let hljs = (try? String(contentsOf: bundle.url(forResource: "highlight.min", withExtension: "js")!)) ?? ""
-        let hljsLight = (try? String(contentsOf: bundle.url(forResource: "github.min", withExtension: "css")!)) ?? ""
-        // 暗色 hljs 主题包在媒体查询内，跟随系统明暗自动切换；亮色主题为默认。
-        let hljsDark = (try? String(contentsOf: bundle.url(forResource: "github-dark.min", withExtension: "css")!)) ?? ""
+        return (readerCSS, kcss,
+                (try? String(contentsOf: bundle.url(forResource: "markdown-it.min", withExtension: "js")!)) ?? "",
+                (try? String(contentsOf: bundle.url(forResource: "katex.min", withExtension: "js")!)) ?? "",
+                (try? String(contentsOf: bundle.url(forResource: "katex-auto-render.min", withExtension: "js")!)) ?? "",
+                (try? String(contentsOf: bundle.url(forResource: "markdown-it-footnote.min", withExtension: "js")!)) ?? "",
+                (try? String(contentsOf: bundle.url(forResource: "highlight.min", withExtension: "js")!)) ?? "",
+                (try? String(contentsOf: bundle.url(forResource: "github.min", withExtension: "css")!)) ?? "",
+                (try? String(contentsOf: bundle.url(forResource: "github-dark.min", withExtension: "css")!)) ?? "")
+    }()
+    private static let headHTML: String = {
+        let b = bundled
+        return "<style>\(b.readerCSS)\n\(b.katexCSS)\n\(b.hljsLight)\n@media (prefers-color-scheme: dark){ \(b.hljsDark) }</style>"
+    }()
+    private static let scriptsHTML: String = {
+        let b = bundled
+        return "<script>\(b.md)</script><script>\(b.kx)</script><script>\(b.ar)</script><script>\(b.footnote)</script><script>\(b.hljs)</script><script>\(jsFunctions)</script>"
+    }()
 
-        let head = "<style>\(readerCSS)\n\(kcss)\n\(hljsLight)\n@media (prefers-color-scheme: dark){ \(hljsDark) }</style>"
-        // 渲染库 + 脚注插件 + 高亮库 + 滚动/搜索/工具函数定义
-        let scripts = "<script>\(md)</script><script>\(kx)</script><script>\(ar)</script><script>\(footnote)</script><script>\(hljs)</script><script>\(jsFunctions)</script>"
+    /// 把 markdown-it / katex 的 JS、CSS 全部内联进 HTML，避免 file:// 跨源加载问题。
+    /// 图片相对路径由 WebView 的 baseURL（.md 目录）解析。
+    /// markdown 内容直接内联，页面加载即完成渲染并回传大纲，单次导航更稳健。
+    private static func htmlTemplate(markdown: String) -> String {
         let mdJSON = jsonString(for: markdown)
         // 页面加载时立即渲染并回传大纲
         let renderScript = "<script>\(jsRenderInline(mdJSON: mdJSON))</script>"
 
         return """
-        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(head)\(scripts)</head>
+        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(headHTML)\(scriptsHTML)</head>
         <body><article id="content"></article>\(renderScript)</body></html>
         """
     }
@@ -202,30 +212,46 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       return window.__searchIdx + 1;
     };
     // 双向同步：根据滚动位置计算当前可视章节，回传 heading id 供大纲反向高亮。
-    // 性能要点：
-    // 1. 标题列表在渲染时缓存到 window.__heads，滚动时不再 querySelectorAll（DOM 查询昂贵）。
-    // 2. 用二分查找「最后一个 top <= 100 的标题」（文档顺序 = 纵向位置单调递增），
-    //    把每帧的 getBoundingClientRect 布局查询从 O(N) 降到 O(log N)，消除长文档 layout thrashing。
-    // 3. 仅在标题真正切换时 postMessage，避免高频消息打满主线程。
+    // 性能要点（第二次优化，v2）：
+    // 1. 标题文档坐标（__docTop）在渲染完成/资源加载后一次性缓存，滚动时零 getBoundingClientRect
+    //    （旧版每帧 O(N) layout 查询，v1 改二分后仍每帧 O(log N) 次强制布局）。
+    // 2. 二分查找「最后一个 __docTop <= scrollY+100 的标题」，纯数值比较，无 DOM 访问。
+    // 3. active 消息 40ms 节流：惯性滚动高频变化时最多约 25 次/秒回传 Swift，避免打满主线程。
+    window.__recomputeHeads = function(){
+      var heads = window.__heads;
+      if(!heads || !heads.length){ return; }
+      var sy = window.scrollY || 0;
+      for (var i = 0; i < heads.length; i++){
+        heads[i].__docTop = heads[i].getBoundingClientRect().top + sy;
+      }
+    };
     window.__lastActive = null;
+    window.__lastActiveSent = 0;
     window.__onScroll = function(){
       var heads = window.__heads;
       if(!heads || !heads.length){ return; }
+      var target = (window.scrollY || 0) + 100;
       var lo = 0, hi = heads.length - 1, idx = -1;
       while(lo <= hi){
         var mid = (lo + hi) >> 1;
-        if(heads[mid].getBoundingClientRect().top <= 100){ idx = mid; lo = mid + 1; }
+        if(heads[mid].__docTop <= target){ idx = mid; lo = mid + 1; }
         else { hi = mid - 1; }
       }
       var active = idx >= 0 ? heads[idx].id : heads[0].id;
       if(active && active !== window.__lastActive){
         window.__lastActive = active;
-        if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.active){
-          window.webkit.messageHandlers.active.postMessage(active);
+        var now = Date.now();
+        if(now - window.__lastActiveSent >= 40){
+          window.__lastActiveSent = now;
+          if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.active){
+            window.webkit.messageHandlers.active.postMessage(active);
+          }
         }
       }
     };
     window.addEventListener('scroll', function(){ window.requestAnimationFrame(window.__onScroll); }, {passive:true});
+    // 图片等资源异步加载会改变布局，load 后重算标题坐标缓存
+    window.addEventListener('load', window.__recomputeHeads);
     """#
 
     /// 页面加载时执行的渲染 + 大纲回传 IIFE。mdJSON 已是合法 JS 字符串字面量，直接内联。
@@ -245,9 +271,10 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             var heads = el.querySelectorAll('h1,h2,h3,h4,h5,h6');
             var outline = [];
             heads.forEach(function(h, i){ if(!h.id){ h.id = 'h-' + i; } outline.push({level: parseInt(h.tagName.substring(1)), text: h.textContent, id: h.id}); });
-            // 缓存标题列表供 __onScroll 二分查找使用（滚动时不再重复 querySelectorAll）。
-            window.__heads = Array.prototype.slice.call(heads);
             if(window.renderMathInElement){ try { renderMathInElement(el, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false}); } catch(e){} }
+            // KaTeX 渲染（改变布局）完成后才缓存标题列表与文档坐标，供 __onScroll 零布局查询使用
+            window.__heads = Array.prototype.slice.call(heads);
+            if(window.__recomputeHeads){ window.__recomputeHeads(); }
             window.__outline = outline;
             if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.outline){
               window.webkit.messageHandlers.outline.postMessage(outline);

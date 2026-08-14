@@ -2,9 +2,13 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+/// 主界面。renderer 用 @State 持有但不观察：@State 对引用类型仅管理生命周期，
+/// 其 @Published 变化不会触发 ContentView 整树重算（activeHeadingID 滚动高频更新是
+/// 之前「点任何按钮都卡」的根因）。需要响应 renderer 状态的子视图各自 @ObservedObject。
+@MainActor
 struct ContentView: View {
     @EnvironmentObject var doc: DocState
-    @StateObject private var renderer = MarkdownRenderer()
+    @State private var renderer = MarkdownRenderer()
     @State private var searchText = ""
     @State private var showSearch = false
 
@@ -32,11 +36,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity)
             Divider()
             if doc.showOutline {
-                OutlineView(
-                    outline: renderer.outline,
-                    onSelect: { id in renderer.scrollTo(id) },
-                    activeID: renderer.activeHeadingID
-                )
+                OutlineView(renderer: renderer)
             } else {
                 RecentView()
             }
@@ -57,11 +57,8 @@ struct ContentView: View {
                 SourceView(text: doc.rawText)
             }
             if showSearch {
-                SearchBar(text: $searchText,
-                          count: renderer.searchCount,
-                          current: renderer.searchCurrent,
-                          onNext: { renderer.searchNext() },
-                          onPrev: { renderer.searchPrev() },
+                SearchBar(renderer: renderer,
+                          text: $searchText,
                           onClose: {
                               showSearch = false
                               searchText = ""
@@ -174,30 +171,55 @@ struct ContentView: View {
     }
 }
 
-/// 源码视图：只读展示当前 Markdown 原文（等宽字体、可选中、自适应明暗背景）。
+/// 源码视图：只读展示当前 Markdown 原文。
+/// 用 NSTextView（AppKit 文本系统）承载而非 SwiftUI Text——后者渲染 MB 级大文本时
+/// 布局开销极高，是「点击源码按钮卡顿」的根因。
 struct SourceView: View {
     let text: String
 
     var body: some View {
-        ScrollView {
-            Text(text)
-                .font(.system(.body, design: .monospaced))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(28)
-                .textSelection(.enabled)
-        }
-        .background(Color(nsColor: .textBackgroundColor))
+        SourceTextView(text: text)
+            .background(Color(nsColor: .textBackgroundColor))
+    }
+}
+
+/// NSTextView 的 SwiftUI 包装：可滚动、可选中、等宽字体。
+struct SourceTextView: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = true
+
+        let tv = NSTextView()
+        tv.isEditable = false
+        tv.isSelectable = true
+        tv.isRichText = false
+        tv.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        tv.backgroundColor = .textBackgroundColor
+        tv.textContainerInset = NSSize(width: 28, height: 28)
+        tv.textContainer?.widthTracksTextView = true
+        tv.isVerticallyResizable = true
+        tv.isHorizontallyResizable = false
+        tv.autoresizingMask = [.width]
+        tv.string = text
+        scroll.documentView = tv
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let tv = scroll.documentView as? NSTextView else { return }
+        if tv.string != text { tv.string = text }
     }
 }
 
 /// 顶部搜索条：输入实时搜索，支持 上/下 跳转与关闭。
+/// 仅观察 renderer 的 searchCount/searchCurrent，不牵连整树重算。
 /// macOS 26+ 使用系统 Liquid Glass 卡片（.glassEffect），旧系统回退毛玻璃材质。
 struct SearchBar: View {
+    @ObservedObject var renderer: MarkdownRenderer
     @Binding var text: String
-    let count: Int
-    let current: Int
-    let onNext: () -> Void
-    let onPrev: () -> Void
     let onClose: () -> Void
 
     var body: some View {
@@ -207,19 +229,19 @@ struct SearchBar: View {
             TextField("Search", text: $text)
                 .textFieldStyle(.plain)
                 .frame(minWidth: 220)
-            if count > 0 {
-                Text("\(current)/\(count)")
+            if renderer.searchCount > 0 {
+                Text("\(renderer.searchCurrent)/\(renderer.searchCount)")
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-            Button { onPrev() } label: { Image(systemName: "chevron.up") }
+            Button { renderer.searchPrev() } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .disabled(count == 0)
-            Button { onNext() } label: { Image(systemName: "chevron.down") }
+                .disabled(renderer.searchCount == 0)
+            Button { renderer.searchNext() } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .disabled(count == 0)
+                .disabled(renderer.searchCount == 0)
             Button { onClose() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
