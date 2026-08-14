@@ -58,6 +58,8 @@ struct ContentView: View {
         }
         // 移除系统默认加在工具栏的 sidebar toggle，改由 detail panel 控制
         .toolbar(removing: .sidebarToggle)
+        // 侧栏最小宽度：防 Outline/History 按钮文字换行（拉到最窄也不难看）
+        .navigationSplitViewColumnWidth(min: 200, ideal: 250)
     }
 
     @ViewBuilder
@@ -120,6 +122,8 @@ struct ContentView: View {
                 SearchPanelController.shared.toggle(renderer: renderer,
                                                     text: $searchText,
                                                     onClose: {
+                                                        // 关闭面板 + 清空搜索
+                                                        SearchPanelController.shared.hide()
                                                         searchText = ""
                                                         renderer.search("")
                                                     })
