@@ -241,7 +241,7 @@ struct ContentView: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let u = panel.url {
-            DocState.shared.open(u)
+            doc.open(u)
         }
     }
 
@@ -256,7 +256,7 @@ struct ContentView: View {
                         fileURL = u
                     }
                     if let u = fileURL {
-                        DispatchQueue.main.async { DocState.shared.open(u) }
+                        DispatchQueue.main.async { self.doc.open(u) }
                     }
                 }
                 return true

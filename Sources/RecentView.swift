@@ -4,16 +4,18 @@ import SwiftUI
 /// 与 OutlineView 同理弃用 List：ScrollView + LazyVStack 自定义行，
 /// 整行可点击（contentShape）、hover 轻量高亮、无 List selection 抢占。
 struct RecentView: View {
+    @EnvironmentObject var doc: DocState
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(DocState.shared.recent.enumerated()), id: \.element) { index, url in
+                ForEach(Array(doc.recent.enumerated()), id: \.element) { index, url in
                     RecentRow(
                         url: url,
                         isFirst: index == 0,
-                        isLast: index == DocState.shared.recent.count - 1
+                        isLast: index == doc.recent.count - 1
                     ) {
-                        DocState.shared.open(url)
+                        doc.open(url)
                     }
                 }
             }

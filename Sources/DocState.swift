@@ -19,10 +19,23 @@ enum AppearanceMode: String {
     }
 }
 
-/// 全局文档状态：当前打开的 .md、原文、最近文件列表、大纲显隐。
-/// 用单例是因为 AppDelegate 的 openURLs 也需要写入同一份状态。
+/// 每个窗口（Tab）一份的文档状态：当前打开的 .md、原文、最近文件列表、大纲显隐。
+/// 不再用单例——否则多窗口/Tab 全部共享同一文档（"多个 Tab 文件是同一个"的根因）。
+/// 多窗口路由（Finder 双击打开走前台窗口）由 static active / pendingOpenURL 处理。
 @MainActor final class DocState: ObservableObject {
-    static let shared = DocState()
+    /// 当前获得焦点的窗口对应的文档状态（weak，多窗口时路由 Finder 打开到前台窗口）。
+    static weak var active: DocState?
+    /// 冷启动时 Finder 打开事件可能先于窗口就绪，暂存待窗口出现后消费。
+    static var pendingOpenURL: URL?
+
+    /// 窗口成为 key 时注册为活动文档；若存在冷启动暂存的打开请求则立即消费。
+    static func activate(_ doc: DocState) {
+        active = doc
+        if let u = pendingOpenURL {
+            pendingOpenURL = nil
+            doc.open(u)
+        }
+    }
 
     @Published var url: URL?
     @Published var rawText: String = ""
