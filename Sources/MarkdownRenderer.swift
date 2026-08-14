@@ -288,15 +288,17 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       var active = idx >= 0 ? heads[idx].id : heads[0].id;
       if(active && active !== window.__lastActive){
         window.__lastActive = active;
+        // 阅读进度保存与发送节流【解耦】：每次章节切换立即写 localStorage。
+        // （原实现与 40ms 节流共用一块，快速滚动时最终章节可能落在节流窗口内而漏存，
+        //   切走再切回就恢复到旧章节——即用户反馈的“无法记住滚动位置”。）
+        if(window.__docName){
+          try { window.localStorage.setItem('mdreview.prog.' + window.__docName, active); } catch(e){}
+        }
         var now = Date.now();
         if(now - window.__lastActiveSent >= 40){
           window.__lastActiveSent = now;
           if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.active){
             window.webkit.messageHandlers.active.postMessage(active);
-          }
-          // 阅读进度记忆（localStorage，key 含文件名；受限环境失败静默）
-          if(window.__docName){
-            try { window.localStorage.setItem('mdreview.prog.' + window.__docName, active); } catch(e){}
           }
         }
       }
@@ -309,11 +311,11 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       if(!last){ return; }
       if(last.getBoundingClientRect().bottom < window.innerHeight * 2.5){ window.__renderBatch(4); }
     };
-    // 恢复上次阅读位置（按章节 id；分块模式下目标未渲染则先渲染到该段）
-    window.__restoreProgress = function(){
-      if(!window.__docName){ return; }
-      var saved = null;
-      try { saved = window.localStorage.getItem('mdreview.prog.' + window.__docName); } catch(e){}
+    // 恢复上次阅读位置（按章节 id；分块模式下目标未渲染则先渲染到该段）。
+    // 图片/Mermaid 异步加载会改变布局，故 300ms 后重试一次保证滚动到位。
+    window.__restoreTo = null;
+    window.__doRestore = function(){
+      var saved = window.__restoreTo;
       if(!saved){ return; }
       var e = document.getElementById(saved);
       if(!e && window.__sections){
@@ -328,6 +330,15 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         }
       }
       if(e){ e.scrollIntoView({block:'start'}); window.__onScroll && window.__onScroll(); }
+    };
+    window.__restoreProgress = function(){
+      if(!window.__docName){ return; }
+      var saved = null;
+      try { saved = window.localStorage.getItem('mdreview.prog.' + window.__docName); } catch(e){}
+      if(!saved){ return; }
+      window.__restoreTo = saved;
+      window.__doRestore();
+      setTimeout(function(){ window.__doRestore(); }, 300);
     };
     window.addEventListener('scroll', function(){
       window.requestAnimationFrame(function(){
