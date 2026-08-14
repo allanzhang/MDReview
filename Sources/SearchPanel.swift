@@ -68,12 +68,14 @@ import SwiftUI
     }
 
     /// 面板定位与尺寸：
-    /// - 高度 = 工具栏按钮区域高度；宽度 = Open/Search 按钮水平距离的 70%
+    /// - 高度 = 工具栏按钮【背景区域】高度（容器视图高度，非图标本身）
+    /// - 宽度 = Open/Search 按钮水平距离的 70%
     /// - 水平 + 垂直双居中于两按钮中点（贴工具栏）
     /// 按钮识别：toolTip（.help 设置）与 label 都查——SwiftUI toolbar item 的 label 常为空。
     /// 锚点不可用/异常时回退窗口顶部居中。
     private func position(_ panel: NSPanel, relativeTo window: NSWindow) {
         var openFrame: NSRect?
+        var openAreaH: CGFloat?
         var searchFrame: NSRect?
 
         if let toolbar = window.toolbar {
@@ -85,6 +87,13 @@ import SwiftUI
                 let r = vw.convertToScreen(view.convert(view.bounds, to: nil))
                 if id.contains("open") {
                     openFrame = r
+                    // 按钮区域（背景矩形）高度：优先取容器视图高度——NSHostingView 的
+                    // superview 是 toolbar 容器，其高度含按钮周围 padding 的背景区；
+                    // 仅当处于合理区间（24-40）才采纳，否则回退按钮自身高度
+                    if let sv = view.superview {
+                        let h = sv.bounds.height
+                        if h >= 24 && h <= 40 { openAreaH = h }
+                    }
                 } else if id.contains("search") {
                     searchFrame = r
                 }
@@ -97,8 +106,8 @@ import SwiftUI
         let y: CGFloat
 
         if let o = openFrame, let s = searchFrame {
-            // 高度 = 按钮区域高度；宽度 = 两按钮水平间距的 70%（下限 220 保证可输入）
-            height = o.height
+            // 高度 = 按钮背景区域高度；宽度 = 两按钮水平间距的 70%（下限 220 保证可输入）
+            height = openAreaH ?? o.height
             width = max(220, (s.midX - o.midX) * 0.7)
             // 水平 + 垂直双居中于两按钮中点
             x = (o.midX + s.midX) / 2 - width / 2
@@ -106,7 +115,7 @@ import SwiftUI
         } else {
             // 回退：窗口顶部居中（屏幕坐标，永不飞出）
             let wf = window.frame
-            height = 28
+            height = 30
             width = max(220, min(wf.width * 0.4, 520))
             x = wf.midX - width / 2
             y = wf.maxY - height - 8
