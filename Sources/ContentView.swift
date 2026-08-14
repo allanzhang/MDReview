@@ -46,28 +46,26 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebar: some View {
         VStack(spacing: 0) {
-            // Outline/History 切换：置顶靠右（左上角是红绿灯/多 Tab 标签栏区域，靠右避免冲突）
-            HStack {
-                Spacer(minLength: 0)
-                HStack(spacing: 3) {
-                    SidebarSegment(title: "Outline", systemImage: "list.bullet",
-                                   isSelected: doc.showOutline) { doc.showOutline = true }
-                    SidebarSegment(title: "History", systemImage: "clock",
-                                   isSelected: !doc.showOutline) { doc.showOutline = false }
-                }
-                .padding(2)
-                .background {
-                    // 底座层次：light 下深灰底 + 细描边（组件边界清晰），dark 下保持浅白底
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(systemScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.07))
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 7)
-                        .stroke(systemScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.08), lineWidth: 1)
-                }
+            // 视图切换：两个大按钮（图标 + 文字）
+            HStack(spacing: 4) {
+                SidebarSegment(title: "Outline", systemImage: "list.bullet",
+                               isSelected: doc.showOutline) { doc.showOutline = true }
+                SidebarSegment(title: "History", systemImage: "clock",
+                               isSelected: !doc.showOutline) { doc.showOutline = false }
+            }
+            .padding(4)
+            .background {
+                // 底座层次：light 下深灰底 + 细描边（组件边界清晰），dark 下保持浅白底
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(systemScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.07))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 9)
+                    .stroke(systemScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.08), lineWidth: 1)
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
             Divider()
             if doc.showOutline {
                 OutlineView(renderer: renderer)
@@ -242,7 +240,7 @@ struct ContentView: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let u = panel.url {
-            doc.open(u)
+            DocState.shared.open(u)
         }
     }
 
@@ -257,7 +255,7 @@ struct ContentView: View {
                         fileURL = u
                     }
                     if let u = fileURL {
-                        DispatchQueue.main.async { self.doc.open(u) }
+                        DispatchQueue.main.async { DocState.shared.open(u) }
                     }
                 }
                 return true
@@ -364,23 +362,22 @@ private struct SidebarSegment: View {
 
     var body: some View {
         Button(action: action) {
-            // 仅图标：侧栏顶部右侧空间有限，去掉文字、压缩高度（悬停有 tooltip 说明）
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 20)
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 12, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isSelected ? Color.white : Color.primary)
-        .help(title)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 6).fill(Color.accentColor)
+                RoundedRectangle(cornerRadius: 7).fill(Color.accentColor)
             } else if isHovering {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 7)
                     .fill(scheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.06))
             }
         }
+        .foregroundStyle(isSelected ? Color.white : Color.primary)
         .animation(.easeOut(duration: 0.12), value: isSelected)
         .onHover { isHovering = $0 }
     }
