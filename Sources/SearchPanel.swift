@@ -14,8 +14,10 @@ import SwiftUI
 /// - 独立 NSPanel（非 childWindow——macOS 26 上 childWindow+borderless 面板偶发不显示）。
 /// - 定位统一用【屏幕坐标】：按钮 convert(bounds, to: nil) 是窗口坐标，必须经
 ///   convertToScreen 转换后 setFrameOrigin（单位混用是"飞到窗外"的根源）。
-/// - 拖动/缩放同步：didMove/didResize 监听重定位，但【尺寸缓存】——移动时不再反复
-///   setContentSize 触发布局，只 setFrameOrigin，消除此前的"卡卡"感。
+/// - 拖动/缩放同步：**didMoveNotification 只在拖动结束才触发，不能做实时跟随**，
+///   故拖动期间用 eventTracking 模式 60Hz 定时器实时重定位（平时不触发、零开销）；
+///   didMove/didResize 监听做收尾与缩放同步。【尺寸缓存】——移动时不再反复
+///   setContentSize 触发布局，只 setFrameOrigin，保证拖动流畅。
 /// - 垂直：直接量 Open/Search 按钮视图的实际坐标——面板高度 = 按钮背景高度，
 ///   垂直居中于按钮行（不猜 chrome，不贴窗口顶；标题栏/工具栏高度随系统/外观变化，
 ///   猜 chrome 正是此前"高度对不上、不居中"的根因）。
@@ -24,6 +26,8 @@ import SwiftUI
 
     private var panel: NSPanel?
     private weak var observedWindow: NSWindow?
+    /// 拖动实时跟随定时器：只挂在 eventTracking 模式，拖动/缩放期间才触发。
+    private var trackingTimer: Timer?
     /// 尺寸缓存：拖动时尺寸不变则跳过 setContentSize（避免反复布局卡顿）。
     private var lastSize: NSSize = .zero
 
@@ -67,6 +71,7 @@ import SwiftUI
         self.panel = panel
 
         observe(window)
+        startTracking(window)
         // 工具栏可能在面板刚显示时尚未完成布局，稍后重测一次按钮坐标，
         // 避免首次呼出时量到 0 尺寸而回退到 chrome 估算。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak panel, weak window] in
@@ -77,6 +82,8 @@ import SwiftUI
 
     func hide() {
         panel?.orderOut(nil)
+        trackingTimer?.invalidate()
+        trackingTimer = nil
         if let w = observedWindow {
             NotificationCenter.default.removeObserver(self, name: NSWindow.didMoveNotification, object: w)
             NotificationCenter.default.removeObserver(self, name: NSWindow.didResizeNotification, object: w)
@@ -170,6 +177,31 @@ import SwiftUI
             self, selector: #selector(windowFrameChanged(_:)),
             name: NSWindow.didResizeNotification, object: window
         )
+    }
+
+    /// 实时跟随：NSWindow.didMoveNotification 只在拖动结束（或停顿约半秒）才发送，
+    /// 观察者方案在拖动过程中面板会停在原地、松手才跳过去（用户反馈的"不同步"）。
+    /// 改为在 eventTracking 模式下跑 60Hz 定时器，拖动期间每帧重定位；
+    /// 平时（default 模式）定时器不触发，无额外开销。
+    private func startTracking(_ window: NSWindow) {
+        trackingTimer?.invalidate()
+        let timer = Timer(
+            timeInterval: 1.0 / 60.0,
+            target: self,
+            selector: #selector(trackingTick(_:)),
+            userInfo: nil,
+            repeats: true
+        )
+        RunLoop.main.add(timer, forMode: .eventTracking)
+        trackingTimer = timer
+    }
+
+    @objc private func trackingTick(_ timer: Timer) {
+        guard let window = observedWindow, let panel, isVisible else {
+            timer.invalidate()
+            return
+        }
+        position(panel, relativeTo: window)
     }
 
     @objc private func windowFrameChanged(_ note: Notification) {
