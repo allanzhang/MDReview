@@ -12,7 +12,6 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var systemScheme
     @State private var renderer = MarkdownRenderer()
     @State private var searchText = ""
-    @State private var showSearch = false
     /// 搜索防抖（大文档 TreeWalker 全文遍历昂贵，输入停顿 250ms 才执行）。
     @State private var searchDebounce: DispatchWorkItem?
     /// 拖拽悬停状态（用于高亮反馈）。
@@ -25,24 +24,6 @@ struct ContentView: View {
             detailContent
         }
         .navigationSplitViewStyle(.balanced)
-        // 搜索框：与窗口顶边齐平、横向居中（覆盖文件名/路径区域）、宽度随窗宽 55% 自适应
-        .overlay {
-            if showSearch && doc.url != nil {
-                GeometryReader { geo in
-                    SearchBar(renderer: renderer,
-                              text: $searchText,
-                              onClose: {
-                                  showSearch = false
-                                  searchText = ""
-                                  renderer.search("")
-                              })
-                    // 窗宽 55%（用户红框标注范围），限制 320-720，贴窗口顶边
-                    .frame(width: max(320, min(geo.size.width * 0.55, 720)))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 6)
-                }
-            }
-        }
         // 打开文档与外部编辑热更新都会更新 rawText，统一由此触发渲染（url 变化必伴随 rawText 变化）
         .onChange(of: doc.rawText) { _, _ in DispatchQueue.main.async { renderCurrent() } }
         // 外观切换：即时注入 JS 生效，不重载页面（保留滚动位置与渲染状态）
@@ -134,7 +115,15 @@ struct ContentView: View {
                 .help("Open Markdown File")
         }
         ToolbarItem(placement: .primaryAction) {
-            Button { showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }
+            // 搜索：呼出浮动面板（标题栏中央悬空覆盖，原布局不变）
+            Button {
+                SearchPanelController.shared.toggle(renderer: renderer,
+                                                    text: $searchText,
+                                                    onClose: {
+                                                        searchText = ""
+                                                        renderer.search("")
+                                                    })
+            } label: { Label("Search", systemImage: "magnifyingglass") }
                 .help("Search in Document")
         }
         // 外观切换：单按钮，太阳/月亮图标高亮代表当前状态。

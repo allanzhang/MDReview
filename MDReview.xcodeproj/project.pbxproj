@@ -28,6 +28,7 @@
 		80F6A8C6EC983F03A056FE0A /* KaTeX_Main-Bold.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = F897314445FB4D270ECC9443 /* KaTeX_Main-Bold.woff2 */; };
 		87748E2A45EB0C8A06C5FD78 /* KaTeX_Size2-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = C10C9BC090B575DBD6C47D94 /* KaTeX_Size2-Regular.woff2 */; };
 		8D679CBAB297B6E6763CB7AB /* KaTeX_AMS-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = 162CCDA1B0E0378E53331F65 /* KaTeX_AMS-Regular.woff2 */; };
+		8E57937830FB63F5524EA129 /* SearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B48FD506F9616AB5B1C5A27 /* SearchPanel.swift */; };
 		9FC8F3D20D84BB68FABA673D /* katex.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 57DFF9067B7CB4686051BA5A /* katex.min.js */; };
 		A6C786DCE048CDB90F7828F0 /* markdown-it.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 3EC7CBB60343263839F5D098 /* markdown-it.min.js */; };
 		A9571C0C4129DC877400674B /* KaTeX_Caligraphic-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = D4C7D1DB5A6252C7FA32BADD /* KaTeX_Caligraphic-Regular.woff2 */; };
@@ -59,6 +60,7 @@
 		511FFD4007D6E5EF956FCA69 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		57DFF9067B7CB4686051BA5A /* katex.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = katex.min.js; sourceTree = "<group>"; };
 		5F6F433AADE9F62B249F8A36 /* DocState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocState.swift; sourceTree = "<group>"; };
+		6B48FD506F9616AB5B1C5A27 /* SearchPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPanel.swift; sourceTree = "<group>"; };
 		6C7F6DD39CD89251EE4812B1 /* KaTeX_SansSerif-Bold.woff2 */ = {isa = PBXFileReference; path = "KaTeX_SansSerif-Bold.woff2"; sourceTree = "<group>"; };
 		6E546F0900486F133CC182CF /* highlight.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = highlight.min.js; sourceTree = "<group>"; };
 		6FCC1B2160C310C25C9737D3 /* KaTeX_SansSerif-Regular.woff2 */ = {isa = PBXFileReference; path = "KaTeX_SansSerif-Regular.woff2"; sourceTree = "<group>"; };
@@ -127,6 +129,7 @@
 				F17F20383DC2B6519F2125C2 /* OutlineView.swift */,
 				92E179B13FC0EB5161A432DC /* ReaderWebView.swift */,
 				DAE9A53CCD831C476B653526 /* RecentView.swift */,
+				6B48FD506F9616AB5B1C5A27 /* SearchPanel.swift */,
 				AFAADFF6FD18E6A83AA15ADB /* Resources */,
 			);
 			path = Sources;
@@ -279,6 +282,7 @@
 				B4BEC0CCFFB950799E6AA6F8 /* OutlineView.swift in Sources */,
 				6A6D5947CC2C71F20E31C63B /* ReaderWebView.swift in Sources */,
 				54DD33801BBC3B35CA64F8A1 /* RecentView.swift in Sources */,
+				8E57937830FB63F5524EA129 /* SearchPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
