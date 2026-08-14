@@ -14,6 +14,8 @@ struct MDReviewApp: App {
                 // 避免 macOS 26 上 NavigationSplitView 布局动画时强制外观回退/闪烁）
                 .modifier(WindowAppearanceModifier(mode: doc.appearance))
         }
+        // 隐藏标题栏：内容延伸至窗口顶部，搜索框等悬浮层可与窗口顶边齐平
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
     }
 }

@@ -25,6 +25,24 @@ struct ContentView: View {
             detailContent
         }
         .navigationSplitViewStyle(.balanced)
+        // 搜索框：与窗口顶边齐平、横向居中（覆盖文件名/路径区域）、宽度随窗宽 55% 自适应
+        .overlay {
+            if showSearch && doc.url != nil {
+                GeometryReader { geo in
+                    SearchBar(renderer: renderer,
+                              text: $searchText,
+                              onClose: {
+                                  showSearch = false
+                                  searchText = ""
+                                  renderer.search("")
+                              })
+                    // 窗宽 55%（用户红框标注范围），限制 320-720，贴窗口顶边
+                    .frame(width: max(320, min(geo.size.width * 0.55, 720)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 6)
+                }
+            }
+        }
         // 打开文档与外部编辑热更新都会更新 rawText，统一由此触发渲染（url 变化必伴随 rawText 变化）
         .onChange(of: doc.rawText) { _, _ in DispatchQueue.main.async { renderCurrent() } }
         // 外观切换：即时注入 JS 生效，不重载页面（保留滚动位置与渲染状态）
@@ -84,22 +102,6 @@ struct ContentView: View {
             // 源码态：只读覆盖在 WebView 之上，保留渲染状态不卸载
             if doc.showSource && doc.url != nil {
                 SourceView(text: doc.rawText)
-            }
-            // 搜索框：Spotlight 式悬浮卡片，覆盖内容区顶部标题区域（横向居中、宽度随内容区自适应）
-            if showSearch && doc.url != nil {
-                GeometryReader { geo in
-                    SearchBar(renderer: renderer,
-                              text: $searchText,
-                              onClose: {
-                                  showSearch = false
-                                  searchText = ""
-                                  renderer.search("")
-                              })
-                    // 宽度自适应：约内容区 55%，限制在 300-640 区间，随窗口缩放
-                    .frame(width: max(300, min(geo.size.width * 0.55, 640)))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 12)
-                }
             }
         }
         .onChange(of: searchText) { _, newValue in
