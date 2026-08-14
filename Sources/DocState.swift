@@ -34,7 +34,7 @@ import SwiftUI
             if recent.count > recentMax { recent.removeLast() }
             saveRecent()
         } catch {
-            self.rawText = "// 无法读取文件：\n\(error.localizedDescription)"
+            self.rawText = "// Cannot read file:\n\(error.localizedDescription)"
             self.url = url
         }
     }

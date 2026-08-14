@@ -19,6 +19,6 @@ struct OutlineView: View {
             .listRowBackground(h.id == activeID ? Color.accentColor.opacity(0.18) : nil)
         }
         .listStyle(.sidebar)
-        .navigationTitle("大纲")
+        .navigationTitle("Outline")
     }
 }

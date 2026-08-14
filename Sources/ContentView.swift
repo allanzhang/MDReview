@@ -22,13 +22,13 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebar: some View {
         VStack(spacing: 0) {
-            // 大纲 / 最近文件 二选一切换器，放在 sidebar panel 顶部，高亮互斥
-            Picker("视图", selection: $doc.showOutline) {
-                Label("大纲", systemImage: "list.bullet").tag(true)
-                Label("最近", systemImage: "clock").tag(false)
+            // Outline / Recent 切换器：仅图标、无文字 Label，保持侧栏顶部干净（macOS 26 自动 Liquid Glass 样式）
+            Picker("View", selection: $doc.showOutline) {
+                Image(systemName: "list.bullet").tag(true)
+                Image(systemName: "clock").tag(false)
             }
             .pickerStyle(.segmented)
-            .padding(8)
+            .padding(10)
             .frame(maxWidth: .infinity)
             Divider()
             if doc.showOutline {
@@ -67,10 +67,6 @@ struct ContentView: View {
                               searchText = ""
                               renderer.search("")
                           })
-                  .padding(8)
-                  .background(.ultraThinMaterial)
-                  .clipShape(RoundedRectangle(cornerRadius: 10))
-                  .padding(8)
             }
         }
         .onChange(of: searchText) { _, _ in DispatchQueue.main.async { renderer.search(searchText) } }
@@ -85,29 +81,29 @@ struct ContentView: View {
                 // 无动画直接切换：NavigationSplitView 列动画会驱动 detail 区 WKWebView 连续 resize 重排，长文档下明显卡顿
                 doc.columnVisibility = (doc.columnVisibility == .all) ? .detailOnly : .all
             } label: {
-                Label("侧边栏", systemImage: doc.columnVisibility == .all ? "sidebar.left" : "sidebar.right")
+                Label("Sidebar", systemImage: doc.columnVisibility == .all ? "sidebar.left" : "sidebar.right")
             }
-            .help(doc.columnVisibility == .all ? "隐藏侧边栏" : "显示侧边栏")
+            .help(doc.columnVisibility == .all ? "Hide Sidebar" : "Show Sidebar")
         }
         ToolbarItem(placement: .navigation) {
-            Button { openPanel() } label: { Label("打开", systemImage: "folder") }
-                .help("打开 Markdown 文件")
+            Button { openPanel() } label: { Label("Open", systemImage: "folder") }
+                .help("Open Markdown File")
         }
         ToolbarItem(placement: .primaryAction) {
-            Button { showSearch.toggle() } label: { Label("搜索", systemImage: "magnifyingglass") }
-                .help("全文搜索")
+            Button { showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }
+                .help("Search in Document")
         }
         ToolbarItem(placement: .automatic) {
             Button {
                 withAnimation { doc.showSource.toggle() }
             } label: {
-                Label("源码", systemImage: doc.showSource ? "doc.richtext" : "doc.plaintext")
+                Label("Source", systemImage: doc.showSource ? "doc.richtext" : "doc.plaintext")
             }
-            .help(doc.showSource ? "切换为渲染视图" : "切换为源码视图")
+            .help(doc.showSource ? "Switch to Rendered View" : "Switch to Source View")
         }
         ToolbarItem(placement: .automatic) {
-            Button { openInExternalEditor() } label: { Label("外部编辑器", systemImage: "pencil.and.outline") }
-                .help("用外部编辑器打开当前文件（Cmd+E）")
+            Button { openInExternalEditor() } label: { Label("External Editor", systemImage: "pencil.and.outline") }
+                .help("Open in External Editor (Cmd+E)")
                 .keyboardShortcut("e", modifiers: .command)
                 .disabled(doc.url == nil)
         }
@@ -195,6 +191,7 @@ struct SourceView: View {
 }
 
 /// 顶部搜索条：输入实时搜索，支持 上/下 跳转与关闭。
+/// macOS 26+ 使用系统 Liquid Glass 卡片（.glassEffect），旧系统回退毛玻璃材质。
 struct SearchBar: View {
     @Binding var text: String
     let count: Int
@@ -205,8 +202,10 @@ struct SearchBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            TextField("搜索", text: $text)
-                .textFieldStyle(.roundedBorder)
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search", text: $text)
+                .textFieldStyle(.plain)
                 .frame(minWidth: 220)
             if count > 0 {
                 Text("\(current)/\(count)")
@@ -214,11 +213,32 @@ struct SearchBar: View {
                     .monospacedDigit()
             }
             Button { onPrev() } label: { Image(systemName: "chevron.up") }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
                 .disabled(count == 0)
             Button { onNext() } label: { Image(systemName: "chevron.down") }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
                 .disabled(count == 0)
             Button { onClose() } label: { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(glassBackground)
+        .padding(12)
+    }
+
+    @ViewBuilder
+    private var glassBackground: some View {
+        if #available(macOS 26.0, *) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.regularMaterial)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        } else {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
         }
     }
 }

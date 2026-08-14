@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 最近文件列表（点工具栏“大纲”按钮可在此与大纲间切换）。
+/// 最近文件列表（与大纲共用侧栏顶部切换器）。
 struct RecentView: View {
     var body: some View {
         List {
@@ -21,6 +21,6 @@ struct RecentView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("最近文件")
+        .navigationTitle("Recent")
     }
 }
