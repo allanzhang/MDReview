@@ -8,6 +8,8 @@ import UniformTypeIdentifiers
 @MainActor
 struct ContentView: View {
     @EnvironmentObject var doc: DocState
+    /// 窗口实际外观（system 模式跟随系统、手动模式由 preferredColorScheme 强制），用于外观按钮图标。
+    @Environment(\.colorScheme) private var systemScheme
     @State private var renderer = MarkdownRenderer()
     @State private var searchText = ""
     @State private var showSearch = false
@@ -126,31 +128,25 @@ struct ContentView: View {
             Button { showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }
                 .help("Search in Document")
         }
-        // 外观切换：跟随系统 / 强制亮 / 强制暗（即时生效不重载，整窗联动见 MDReviewApp）
+        // 外观切换：单按钮，太阳/月亮图标高亮代表当前状态。
+        // System（默认）→ 点击临时覆盖为相反外观 → 再点回到 System（不持久化）
         ToolbarItem(placement: .automatic) {
-            Menu {
-                Button {
-                    doc.setAppearance(.system)
-                } label: {
-                    if doc.appearance == .system { Label("System", systemImage: "checkmark") }
-                    else { Text("System") }
-                }
-                Button {
-                    doc.setAppearance(.light)
-                } label: {
-                    if doc.appearance == .light { Label("Light", systemImage: "checkmark") }
-                    else { Text("Light") }
-                }
-                Button {
-                    doc.setAppearance(.dark)
-                } label: {
-                    if doc.appearance == .dark { Label("Dark", systemImage: "checkmark") }
-                    else { Text("Dark") }
-                }
+            Button {
+                doc.toggleAppearance()
             } label: {
-                Label("Appearance", systemImage: "sun.moon")
+                Image(systemName: appearanceIconName)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(isManualAppearance ? Color.white : Color.primary)
+                    .padding(6)
+                    .background {
+                        if isManualAppearance {
+                            Circle().fill(Color.accentColor)
+                        }
+                    }
+                    .contentShape(Circle())
             }
-            .help("Appearance")
+            .buttonStyle(.plain)
+            .help(isManualAppearance ? "Override active — click to follow system" : "Follow system — click to override")
         }
         // 次级功能收纳进 More 菜单，保持工具栏克制（源码对照 / 外部编辑器）
         ToolbarItem(placement: .automatic) {
@@ -185,6 +181,18 @@ struct ContentView: View {
             .disabled(doc.url == nil)
         }
     }
+
+    // MARK: - 外观按钮辅助
+
+    /// 是否处于手动覆盖状态（非跟随系统），用于按钮高亮。
+    private var isManualAppearance: Bool { doc.appearance != .system }
+    /// 当前生效是否暗色：手动模式按选择，system 模式按窗口实际外观（colorScheme）。
+    private var isDarkEffective: Bool {
+        if doc.appearance == .system { return systemScheme == .dark }
+        return doc.appearance == .dark
+    }
+    /// 外观按钮图标：暗 → 月亮，亮 → 太阳。
+    private var appearanceIconName: String { isDarkEffective ? "moon" : "sun.max" }
 
     private func renderCurrent() {
         guard let url = doc.url else { return }

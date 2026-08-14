@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -31,11 +32,11 @@ enum AppearanceMode: String {
     @Published var columnVisibility: NavigationSplitViewVisibility = .all
     /// 渲染 / 源码 只读切换。
     @Published var showSource = false
-    /// 外观模式（跟随系统/强制亮/强制暗），UserDefaults 持久化。
+    /// 外观模式（跟随系统/强制亮/强制暗）。默认始终为 system（不持久化手动选择，
+    /// 重启回到跟随系统）；手动切换用于临时覆盖，再次点击回到 system。
     @Published var appearance: AppearanceMode = .system
 
     private let recentKey = "mdreview.recent"
-    private let appearanceKey = "mdreview.appearance"
     private let recentMax = 30
     /// 当前文件系统监听（外部编辑器保存后自动重载，AI 工作流刚需）。
     private var fileMonitor: DispatchSourceFileSystemObject?
@@ -45,13 +46,18 @@ enum AppearanceMode: String {
 
     init() {
         loadRecent()
-        appearance = AppearanceMode(rawValue: UserDefaults.standard.string(forKey: appearanceKey) ?? "") ?? .system
     }
 
-    /// 设置外观模式并持久化（渲染层经 renderer.applyAppearance 即时生效，无需重载）。
-    func setAppearance(_ mode: AppearanceMode) {
-        appearance = mode
-        UserDefaults.standard.set(mode.rawValue, forKey: appearanceKey)
+    /// 外观按钮点击：System → 切到当前系统外观的反面（临时覆盖）；手动 → 回到 System。
+    /// 不持久化手动选择（"不用记住手动"），重启后始终为跟随系统。
+    func toggleAppearance() {
+        switch appearance {
+        case .system:
+            let isSystemDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            appearance = isSystemDark ? .light : .dark
+        case .light, .dark:
+            appearance = .system
+        }
     }
 
     func open(_ url: URL) {
