@@ -27,12 +27,12 @@ import SwiftUI
         }
         guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
 
-        let height: CGFloat = 58
+        let height: CGFloat = 28
         let bar = SearchBar(renderer: renderer, text: text, onClose: onClose)
         let host = NSHostingView(rootView: bar)
         // 透明 + 圆角裁剪（在宿主层裁圆角，保证圆角外透出背后内容）
         host.wantsLayer = true
-        host.layer?.cornerRadius = 20
+        host.layer?.cornerRadius = 14
         host.layer?.masksToBounds = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
 
@@ -67,46 +67,52 @@ import SwiftUI
         observedWindow = nil
     }
 
-    /// 面板定位：水平居中对齐「Open」与「Search」按钮中点（NSToolbarItem.label 匹配），
-    /// 宽度随窗口 55% 自适应（320-720）；锚点不可用/异常时回退窗口顶部居中。
+    /// 面板定位与尺寸：
+    /// - 高度 = 工具栏按钮区域高度；宽度 = Open/Search 按钮水平距离的 70%
+    /// - 水平 + 垂直双居中于两按钮中点（贴工具栏）
+    /// 按钮识别：toolTip（.help 设置）与 label 都查——SwiftUI toolbar item 的 label 常为空。
+    /// 锚点不可用/异常时回退窗口顶部居中。
     private func position(_ panel: NSPanel, relativeTo window: NSWindow) {
-        let width = max(320, min(window.frame.width * 0.55, 720))
-        let height = panel.frame.height
-        panel.setContentSize(NSSize(width: width, height: height))
+        var openFrame: NSRect?
+        var searchFrame: NSRect?
 
-        var anchor: NSPoint?
         if let toolbar = window.toolbar {
-            var openFrame: NSRect?
-            var searchFrame: NSRect?
             for item in toolbar.items {
                 guard let view = item.view, let vw = view.window else { continue }
-                let label = item.label.lowercased()
+                let id = (item.label + " " + (view.toolTip ?? "")).lowercased()
                 // ⚠️ view.convert(bounds, to: nil) 得到的是【窗口坐标】（原点=窗口左下角），
-                // 必须再经 convertToScreen 转成【屏幕坐标】才能与 setFrameOrigin 匹配；
-                // 直接混用会把面板定位到屏幕左下角（表现为"飞到应用外面"）。
+                // 必须再经 convertToScreen 转成【屏幕坐标】才能与 setFrameOrigin 匹配。
                 let r = vw.convertToScreen(view.convert(view.bounds, to: nil))
-                if label.contains("open") {
+                if id.contains("open") {
                     openFrame = r
-                } else if label.contains("search") {
+                } else if id.contains("search") {
                     searchFrame = r
                 }
             }
-            if let o = openFrame, let s = searchFrame {
-                anchor = NSPoint(x: (o.midX + s.midX) / 2, y: (o.midY + s.midY) / 2)
-            }
         }
 
+        let width: CGFloat
+        let height: CGFloat
         let x: CGFloat
         let y: CGFloat
-        // 锚点必须落在某个屏幕附近才可用，否则回退窗口顶部居中（永不飞出屏幕）
-        if let anchor, NSScreen.screens.contains(where: { $0.frame.insetBy(dx: -300, dy: -300).contains(anchor) }) {
-            x = anchor.x - width / 2
-            y = anchor.y - height / 2
+
+        if let o = openFrame, let s = searchFrame {
+            // 高度 = 按钮区域高度；宽度 = 两按钮水平间距的 70%（下限 220 保证可输入）
+            height = o.height
+            width = max(220, (s.midX - o.midX) * 0.7)
+            // 水平 + 垂直双居中于两按钮中点
+            x = (o.midX + s.midX) / 2 - width / 2
+            y = (o.midY + s.midY) / 2 - height / 2
         } else {
+            // 回退：窗口顶部居中（屏幕坐标，永不飞出）
             let wf = window.frame
+            height = 28
+            width = max(220, min(wf.width * 0.4, 520))
             x = wf.midX - width / 2
-            y = wf.maxY - height - 10
+            y = wf.maxY - height - 8
         }
+
+        panel.setContentSize(NSSize(width: width, height: height))
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 

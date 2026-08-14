@@ -433,16 +433,16 @@ struct SearchBar: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 3)
         .background {
-            // 大圆角 + ultraThinMaterial 毛玻璃：透明浮动面板里 glassEffect 会黑底，
-            // material 模糊面板背后内容；ultraThin 更通透有玻璃感
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            // 圆角 14（与宿主层裁剪一致，28pt 面板高度下接近胶囊形）+ ultraThinMaterial
+            // 毛玻璃：透明浮动面板里 glassEffect 会黑底，material 模糊面板背后内容
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.ultraThinMaterial)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(.separator.opacity(0.4), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.25), radius: 22, y: 10)
