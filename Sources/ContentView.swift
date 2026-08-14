@@ -49,26 +49,25 @@ struct ContentView: View {
             // Outline/History 切换：置顶靠右（左上角是红绿灯/多 Tab 标签栏区域，靠右避免冲突）
             HStack {
                 Spacer(minLength: 0)
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     SidebarSegment(title: "Outline", systemImage: "list.bullet",
                                    isSelected: doc.showOutline) { doc.showOutline = true }
                     SidebarSegment(title: "History", systemImage: "clock",
                                    isSelected: !doc.showOutline) { doc.showOutline = false }
                 }
-                .frame(width: 196)
-                .padding(3)
+                .padding(2)
                 .background {
                     // 底座层次：light 下深灰底 + 细描边（组件边界清晰），dark 下保持浅白底
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 7)
                         .fill(systemScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.07))
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 7)
                         .stroke(systemScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.08), lineWidth: 1)
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
             Divider()
             if doc.showOutline {
                 OutlineView(renderer: renderer)
@@ -365,23 +364,23 @@ private struct SidebarSegment: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 12, weight: .medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
+            // 仅图标：侧栏顶部右侧空间有限，去掉文字、压缩高度（悬停有 tooltip 说明）
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 26, height: 20)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .foregroundStyle(isSelected ? Color.white : Color.primary)
+        .help(title)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 7).fill(Color.accentColor)
+                RoundedRectangle(cornerRadius: 6).fill(Color.accentColor)
             } else if isHovering {
-                // hover 反馈：light 深灰 / dark 浅白，组件可交互性一目了然
-                RoundedRectangle(cornerRadius: 7)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(scheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.06))
             }
         }
-        .foregroundStyle(isSelected ? Color.white : Color.primary)
         .animation(.easeOut(duration: 0.12), value: isSelected)
         .onHover { isHovering = $0 }
     }
