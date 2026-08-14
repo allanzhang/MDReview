@@ -67,8 +67,8 @@ import SwiftUI
         observedWindow = nil
     }
 
-    /// 面板定位：水平居中对齐「Open」与「Search」按钮中点（NSToolbarItem.label 匹配，
-    /// 比 toolTip 可靠），宽度随窗口 55% 自适应（320-720）；匹配失败回退窗口顶部居中。
+    /// 面板定位：水平居中对齐「Open」与「Search」按钮中点（NSToolbarItem.label 匹配），
+    /// 宽度随窗口 55% 自适应（320-720）；锚点不可用/异常时回退窗口顶部居中。
     private func position(_ panel: NSPanel, relativeTo window: NSWindow) {
         let width = max(320, min(window.frame.width * 0.55, 720))
         let height = panel.frame.height
@@ -79,9 +79,12 @@ import SwiftUI
             var openFrame: NSRect?
             var searchFrame: NSRect?
             for item in toolbar.items {
-                guard let view = item.view else { continue }
+                guard let view = item.view, let vw = view.window else { continue }
                 let label = item.label.lowercased()
-                let r = view.convert(view.bounds, to: nil)   // 屏幕坐标（AppKit 左下原点）
+                // ⚠️ view.convert(bounds, to: nil) 得到的是【窗口坐标】（原点=窗口左下角），
+                // 必须再经 convertToScreen 转成【屏幕坐标】才能与 setFrameOrigin 匹配；
+                // 直接混用会把面板定位到屏幕左下角（表现为"飞到应用外面"）。
+                let r = vw.convertToScreen(view.convert(view.bounds, to: nil))
                 if label.contains("open") {
                     openFrame = r
                 } else if label.contains("search") {
@@ -95,7 +98,8 @@ import SwiftUI
 
         let x: CGFloat
         let y: CGFloat
-        if let anchor {
+        // 锚点必须落在某个屏幕附近才可用，否则回退窗口顶部居中（永不飞出屏幕）
+        if let anchor, NSScreen.screens.contains(where: { $0.frame.insetBy(dx: -300, dy: -300).contains(anchor) }) {
             x = anchor.x - width / 2
             y = anchor.y - height / 2
         } else {
