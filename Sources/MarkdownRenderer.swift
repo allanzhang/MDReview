@@ -32,6 +32,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     @Published var searchCurrent: Int = 0
     /// 页面滚动时由 JS 回传的当前可视章节 id，用于大纲反向高亮（双向同步）。
     @Published var activeHeadingID: String? = nil
+    /// 当前文档文件名（阅读进度持久化 key 用，Swift/UserDefaults 侧）。
+    private(set) var currentDocName: String?
 
     /// 标记当前页面导航已完成，未就绪时禁止 evaluateJavaScript（修复“持续报错”）。
     private var pageLoaded = false
@@ -56,10 +58,29 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     }
 
     /// 用内联了 markdown 的 HTML 重新加载页面。baseURL 设为 .md 所在目录，使相对图片路径可解析。
-    /// docName 为文件名，用于阅读进度记忆（localStorage key 区分不同文档）。
+    /// docName 为文件名，用于阅读进度记忆（UserDefaults key 区分不同文档，不用 localStorage——
+    /// WKWebView 在 file:// baseURL 下 localStorage 不持久，重开文档即丢）。
     func render(_ markdown: String, baseURL: URL?, docName: String? = nil, appearance: AppearanceMode = .system) {
+        currentDocName = docName
         pageLoaded = false
-        webView.loadHTMLString(Self.htmlTemplate(markdown: markdown, docName: docName, chunkMode: "auto", appearance: appearance), baseURL: baseURL)
+        let savedProgress = docName.flatMap { Self.savedProgress(for: $0) }
+        webView.loadHTMLString(Self.htmlTemplate(markdown: markdown, docName: docName, savedProgress: savedProgress, chunkMode: "auto", appearance: appearance), baseURL: baseURL)
+    }
+
+    // MARK: - 阅读进度持久化（Swift/UserDefaults，可靠跨会话/跨窗口）
+
+    private static let progressKeyPrefix = "mdreview.prog."
+
+    /// 当前章节切换（active 消息）时写入 UserDefaults。
+    func saveProgress(_ headingID: String) {
+        guard let name = currentDocName, !name.isEmpty else { return }
+        UserDefaults.standard.set(headingID, forKey: Self.progressKeyPrefix + name)
+    }
+
+    /// 打开文档时读取上次阅读位置（章节 id；无记录返回 nil）。
+    static func savedProgress(for docName: String) -> String? {
+        guard !docName.isEmpty else { return nil }
+        return UserDefaults.standard.string(forKey: progressKeyPrefix + docName)
     }
 
     /// 手动切换外观模式（不重载页面，直接注入 JS 生效，保留滚动位置与渲染状态）。
@@ -267,17 +288,19 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// mermaid 按需：仅当 markdown 含 ```mermaid 代码块才内联约 3.5MB 渲染库，普通文档零负担。
     /// chunkMode：阅读传 "auto"（大文档自动分块懒渲染），导出传 "full"（强制全量保证备份完整）。
     /// appearance：渲染时的外观模式（跟随系统/强制亮/强制暗），导出 HTML 传 .system 跟随打开者系统。
-    static func htmlTemplate(markdown: String, docName: String? = nil, chunkMode: String = "auto", appearance: AppearanceMode = .system) -> String {
+    static func htmlTemplate(markdown: String, docName: String? = nil, savedProgress: String? = nil, chunkMode: String = "auto", appearance: AppearanceMode = .system) -> String {
         let mdJSON = jsonString(for: markdown)
         let renderScript = "<script>\(jsRenderInline(mdJSON: mdJSON, chunkMode: chunkMode))</script>"
-        // 注入文件名供阅读进度记忆使用（localStorage key 区分不同文档）
+        // 注入文件名供阅读进度记忆使用（UserDefaults key 区分不同文档）
         let docNameScript = "<script>window.__docName = \(jsonString(for: docName ?? ""));</script>"
+        // 注入上次阅读位置（章节 id；无则空串），页面渲染完成后 __restoreProgress 使用
+        let progressScript = "<script>window.__savedProgress = \(jsonString(for: savedProgress ?? ""));</script>"
         // 注入外观模式供 applyTheme 使用
         let themeScript = "<script>window.__forceTheme = '\(appearance.rawValue)';</script>"
         let mermaidScript = markdown.contains("```mermaid") ? "<script>\(bundled.mermaid)</script>" : ""
 
         return """
-        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(headHTML)\(scriptsHTML)\(docNameScript)\(themeScript)\(mermaidScript)</head>
+        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(headHTML)\(scriptsHTML)\(docNameScript)\(progressScript)\(themeScript)\(mermaidScript)</head>
         <body><article id="content"></article>\(renderScript)</body></html>
         """
     }
@@ -361,7 +384,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     // 1. 标题文档坐标（__docTop）在渲染完成/资源加载后一次性缓存，滚动时零 getBoundingClientRect
     //    （旧版每帧 O(N) layout 查询，v1 改二分后仍每帧 O(log N) 次强制布局）。
     // 2. 二分查找「最后一个 __docTop <= scrollY+100 的标题」，纯数值比较，无 DOM 访问。
-    // 3. active 消息 40ms 节流：惯性滚动高频变化时最多约 25 次/秒回传 Swift，避免打满主线程。
+    // 3. active 消息每次章节切换都回传 Swift（用于大纲高亮 + 阅读进度持久化，
+    //    不再 40ms 节流——节流会让快速滚动的最终章节漏存）。
     window.__recomputeHeads = function(){
       var heads = window.__heads;
       if(!heads || !heads.length){ return; }
@@ -371,7 +395,6 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       }
     };
     window.__lastActive = null;
-    window.__lastActiveSent = 0;
     window.__onScroll = function(){
       var heads = window.__heads;
       if(!heads || !heads.length){ return; }
@@ -385,18 +408,11 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       var active = idx >= 0 ? heads[idx].id : heads[0].id;
       if(active && active !== window.__lastActive){
         window.__lastActive = active;
-        // 阅读进度保存与发送节流【解耦】：每次章节切换立即写 localStorage。
-        // （原实现与 40ms 节流共用一块，快速滚动时最终章节可能落在节流窗口内而漏存，
-        //   切走再切回就恢复到旧章节——即用户反馈的“无法记住滚动位置”。）
-        if(window.__docName){
-          try { window.localStorage.setItem('mdreview.prog.' + window.__docName, active); } catch(e){}
-        }
-        var now = Date.now();
-        if(now - window.__lastActiveSent >= 40){
-          window.__lastActiveSent = now;
-          if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.active){
-            window.webkit.messageHandlers.active.postMessage(active);
-          }
+        // 阅读进度持久化在 Swift 侧（UserDefaults，active 消息每次章节切换都回传）：
+        // 不再 localStorage（file:// baseURL 下不持久），也不再 40ms 节流
+        // （节流会让快速滚动的最终章节落在窗口内而漏存——漏存根因之一）。
+        if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.active){
+          window.webkit.messageHandlers.active.postMessage(active);
         }
       }
     };
@@ -434,9 +450,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       if(e){ e.scrollIntoView({block:'start'}); window.__onScroll && window.__onScroll(); }
     };
     window.__restoreProgress = function(){
-      if(!window.__docName){ return; }
-      var saved = null;
-      try { saved = window.localStorage.getItem('mdreview.prog.' + window.__docName); } catch(e){}
+      // 上次阅读位置由 Swift 侧从 UserDefaults 读出并注入 window.__savedProgress
+      var saved = window.__savedProgress || '';
       if(!saved){ return; }
       window.__restoreTo = saved;
       window.__doRestore();
@@ -759,6 +774,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         } else if message.name == "active" {
             guard let id = message.body as? String, let r = renderer, r.activeHeadingID != id else { return }
             r.activeHeadingID = id
+            // 阅读进度持久化：每次章节切换写入 UserDefaults（恢复时 render() 读回注入页面）
+            r.saveProgress(id)
         }
     }
 
