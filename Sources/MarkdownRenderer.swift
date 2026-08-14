@@ -20,13 +20,35 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
 }
 
 /// WKWebView 子类：自定义阅读区右键菜单。macOS 的 WKWebView 没有 UIMenu 委托
-/// （那是 iOS API），系统默认菜单会吞掉 SwiftUI 的 contextMenu，只能重写 menu(for:)，
-/// 在系统默认菜单（Copy 等）基础上追加自定义项。
+/// （那是 iOS API），重写 menu(for:)/rightMouseDown 都可能被其内部视图抢先处理——
+/// 用本地事件监视器拦截"落在本视图区域内"的 rightMouseDown，弹出自定义菜单。
 final class MarkdownWebView: WKWebView {
-    override func menu(for event: NSEvent) -> NSMenu? {
-        let menu = super.menu(for: event) ?? NSMenu()
-        guard !menu.items.contains(where: { $0.title == "Reveal in Finder" }) else { return menu }
-        if !menu.items.isEmpty { menu.addItem(.separator()) }
+    private var monitor: Any?
+
+    override init(frame frameRect: NSRect, configuration: WKWebViewConfiguration) {
+        super.init(frame: frameRect, configuration: configuration)
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            guard let self, let window = self.window, event.window === window else { return event }
+            let loc = self.convert(event.locationInWindow, from: nil)
+            guard self.bounds.contains(loc) else { return event }
+            // 弹出我们自己的菜单并消费事件，阻止 WKWebView 内部默认菜单
+            NSMenu.popUpContextMenu(self.makeMenu(), with: event, for: self)
+            return nil
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func makeItem(_ title: String, _ action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    private func makeMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(makeItem("Copy", #selector(copySelection(_:))))
+        menu.addItem(.separator())
         menu.addItem(makeItem("Reveal in Finder", #selector(revealInFinder(_:))))
         menu.addItem(makeItem("Open in External Editor", #selector(openInExternalEditor(_:))))
         menu.addItem(.separator())
@@ -35,16 +57,14 @@ final class MarkdownWebView: WKWebView {
         return menu
     }
 
-    private func makeItem(_ title: String, _ action: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = self
-        return item
-    }
-
     private func post(_ action: MenuAction) {
         NotificationCenter.default.post(name: .mdreviewMenuAction, object: action)
     }
 
+    @objc private func copySelection(_ sender: Any?) {
+        // 复制选中文字：走系统 copy 响应链（WKWebView 为第一响应者时生效）
+        NSApp.sendAction(Selector(("copy:")), to: nil, from: nil)
+    }
     @objc private func revealInFinder(_ sender: Any?) { post(.revealInFinder) }
     @objc private func openInExternalEditor(_ sender: Any?) { post(.openInExternalEditor) }
     @objc private func exportHTML(_ sender: Any?) { post(.exportHTML) }
