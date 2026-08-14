@@ -41,7 +41,6 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         let coord = Coordinator()
 
         let config = WKWebViewConfiguration()
-        config.preferences.javaScriptEnabled = true
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         // 注册大纲回传通道：页面脚本 window.webkit.messageHandlers.outline.postMessage(...)
         config.userContentController.add(coord, name: "outline")
@@ -100,6 +99,9 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         // evaluateJavaScript 不等待 Promise，会把 Promise 对象当返回值 →
         // "JavaScript execution returned a result of an unsupported type"
         try await evaluateJS("(window.__renderAll ? window.__renderAll() : true)")
+        // Mermaid 渲染是异步的（__renderAll 同步返回时图表可能仍在渲染），
+        // 必须等图表完成再截图，否则 PDF 里 Mermaid 区域是空白/半成品。
+        try await waitForMermaid()
         let config = WKPDFConfiguration()
         let data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
             webView.createPDF(configuration: config) { result in
@@ -121,6 +123,12 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         guard pageLoaded else { throw ExportError.pageNotLoaded }
         // 1. 确保全文渲染（分块懒渲染模式下补全所有段）
         try await evaluateJS("(window.__renderAll ? window.__renderAll() : true)")
+        // 1.5 Mermaid 渲染完成后再抓 DOM（同 exportPDF 的竞态）
+        try await waitForMermaid()
+        // 1.6 相对图片路径改写为绝对 URL：导出的 HTML 可能保存到 .md 之外的位置，
+        // 否则浏览器按导出文件所在目录解析相对路径 → 图片全部失效。
+        // im.src（IDL 属性）返回的是相对路径经 baseURL 解析后的绝对 URL，直接取它。
+        try await evaluateJS(#"(function(){var imgs=document.querySelectorAll('#content img');for(var i=0;i<imgs.length;i++){var im=imgs[i];var s=im.getAttribute('src')||'';if(s&&!/^(?:https?:|data:|file:|#|\/)/i.test(s)){try{im.setAttribute('src',im.src);}catch(e){}}}})();"#)
         // 2. 取渲染后的正文 HTML（String 是 evaluateJavaScript 支持返回类型）
         let innerHTML = try await evaluateJSString("document.getElementById('content').innerHTML")
         // 3. 组装静态页面：内联全部样式，仅留一行主题脚本（Preview 无 JS 时默认亮色，不影响内容）
@@ -132,6 +140,18 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         <body><article id="content">\(innerHTML)</article>\(theme)</body></html>
         """
         try html.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// Mermaid 渲染完成等待：evaluateJavaScript 无法等待 Promise，只能轮询
+    /// 同步标志 window.__mermaidBusy（__renderMermaid 每提交一个渲染任务 +1，完成 -1），
+    /// 归零即全部渲染完成；超时 10s 则放弃等待（避免导出卡死）。
+    private func waitForMermaid() async throws {
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            let busy = try await evaluateJSString("String(window.__mermaidBusy || 0)")
+            if busy.trimmingCharacters(in: .whitespacesAndNewlines) == "0" { return }
+            try await Task.sleep(for: .milliseconds(100))
+        }
     }
 
     /// evaluateJavaScript 的 async 包装（completionHandler → continuation，仅关心执行完成）。
@@ -197,7 +217,9 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     private static func jsonString(for s: String) -> String {
         let data = try! JSONSerialization.data(withJSONObject: [s])
         var raw = String(data: data, encoding: .utf8) ?? "[]"
-        raw = raw.replacingOccurrences(of: "</script>", with: "<\\/script>")
+        // HTML 解析器匹配 </script 时大小写不敏感：文档内容里出现 </SCRIPT> / </Script>
+        // （AI 生成的 MD 常含 HTML/JS 片段）同样会提前闭合内联 <script>，必须全部转义。
+        raw = raw.replacingOccurrences(of: "</script>", with: "<\\/script>", options: .caseInsensitive)
         return String(raw.dropFirst().dropLast())
     }
 
@@ -430,6 +452,28 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       document.body.classList.toggle('theme-dark', dark);
       document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
       document.documentElement.style.background = dark ? '#0d1117' : '#ffffff';
+      // Mermaid SVG 颜色在渲染时写死，切主题必须按新主题重绘，
+      // 否则图表停留在旧主题、与页面其它部分割裂（外观切换是高频验证点）。
+      // 源文本在首次渲染时存入 pre[data-mermaid-src]，这里直接重渲染替换。
+      if(window.mermaid && window.__mermaidInit){
+        try {
+          window.mermaid.initialize({startOnLoad:false, securityLevel:'strict', theme: dark ? 'dark' : 'default'});
+          var boxes = document.querySelectorAll('#content pre.mermaid-box[data-mermaid-src]');
+          for (var i = 0; i < boxes.length; i++){
+            (function(pre){
+              var src = pre.getAttribute('data-mermaid-src');
+              window.__mermaidBusy = (window.__mermaidBusy || 0) + 1;
+              window.mermaid.render('mmd-' + (window.__mmdId = (window.__mmdId||0) + 1), src)
+                .then(function(res){
+                  window.__mermaidBusy--;
+                  pre.innerHTML = res.svg;
+                  if(window.__recomputeHeads){ window.__recomputeHeads(); }
+                })
+                .catch(function(){ window.__mermaidBusy--; });
+            })(boxes[i]);
+          }
+        } catch(e){}
+      }
     };
     // 跟随系统模式下，系统切换外观时自动响应；手动模式不响应
     if(window.matchMedia){
@@ -544,10 +588,19 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
                 }
                 var jobs = [];
                 Array.prototype.forEach.call(mmdEls, function(codeEl){
+                  // 源文本存入 pre[data-mermaid-src]：外观切换时按新主题重绘需要
+                  var pre0 = codeEl.closest('pre');
+                  if(pre0){ pre0.setAttribute('data-mermaid-src', codeEl.textContent); }
                   codeEl.classList.remove('hljs');
+                  // busy 计数：渲染是异步的，导出（PDF/HTML）需轮询它归零后再抓取
+                  window.__mermaidBusy = (window.__mermaidBusy || 0) + 1;
                   jobs.push(window.mermaid.render('mmd-' + (window.__mmdId = (window.__mmdId||0) + 1), codeEl.textContent)
-                    .then(function(res){ var pre = codeEl.closest('pre'); if(pre){ pre.classList.add('mermaid-box'); pre.innerHTML = res.svg; } })
-                    .catch(function(){}));
+                    .then(function(res){
+                      window.__mermaidBusy--;
+                      var pre = codeEl.closest('pre');
+                      if(pre){ pre.classList.add('mermaid-box'); pre.innerHTML = res.svg; }
+                    })
+                    .catch(function(){ window.__mermaidBusy--; }));
                 });
                 Promise.all(jobs).then(function(){ recomputeAll(); });
               } catch(e){}
@@ -634,7 +687,10 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
 @MainActor final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     weak var renderer: MarkdownRenderer?
 
-    nonisolated func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+    // WKScriptMessageHandler 协议在 SDK 中是 @MainActor（WK_SWIFT_UI_ACTOR），
+    // 此回调由 WebKit 在主线程调用。旧代码误标 nonisolated，导致
+    // 访问 MainActor 隔离的 message.name/body 产生并发警告，且理论上不安全。
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "outline" {
             let heads: [Heading]
             if let arr = message.body as? [[String: Any]] {
@@ -642,18 +698,13 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             } else {
                 heads = []
             }
-            Task { @MainActor [weak self] in
-                // 判等写入：双通道（postMessage + didFinish 兜底）可能重复赋值，
-                // @Published 不判等，相同值 set 也会触发 objectWillChange 引发整树重算。
-                guard let r = self?.renderer, r.outline != heads else { return }
-                r.outline = heads
-            }
+            // 判等写入：双通道（postMessage + didFinish 兜底）可能重复赋值，
+            // @Published 不判等，相同值 set 也会触发 objectWillChange 引发整树重算。
+            guard let r = renderer, r.outline != heads else { return }
+            r.outline = heads
         } else if message.name == "active" {
-            guard let id = message.body as? String else { return }
-            Task { @MainActor [weak self] in
-                guard let r = self?.renderer, r.activeHeadingID != id else { return }
-                r.activeHeadingID = id
-            }
+            guard let id = message.body as? String, let r = renderer, r.activeHeadingID != id else { return }
+            r.activeHeadingID = id
         }
     }
 
