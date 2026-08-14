@@ -18,37 +18,27 @@ struct MDReviewApp: App {
     }
 }
 
-/// AppKit 层窗口外观控制：手动切亮/暗时设置 NSWindow.appearance（整窗含侧栏/工具栏跟随），
-/// system 模式传 nil 跟随系统。WebView 内容由 applyAppearance（JS）同步。
+/// 应用级外观控制：设置 NSApp.appearance（AppKit 广播外观变化，工具栏等系统组件会刷新）。
+/// 相比 preferredColorScheme：不受 SwiftUI 布局动画影响（不会回退闪烁）；
+/// 相比 NSWindow.appearance：应用级广播会强制 NSToolbar 重绘按钮，避免"图标残留亮色看不清"。
 struct WindowAppearanceModifier: ViewModifier {
     let mode: AppearanceMode
 
     func body(content: Content) -> some View {
-        content.background(WindowAccessor { window in
-            switch mode {
-            case .system:
-                window.appearance = nil
-            case .light:
-                window.appearance = NSAppearance(named: .aqua)
-            case .dark:
-                window.appearance = NSAppearance(named: .darkAqua)
-            }
-        })
-    }
-}
-
-/// 从 SwiftUI 视图树获取所属 NSWindow（零尺寸背景视图，不影响布局）。
-private struct WindowAccessor: NSViewRepresentable {
-    let onSet: (NSWindow) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        DispatchQueue.main.async { if let w = v.window { onSet(w) } }
-        return v
+        content
+            .onChange(of: mode) { _, newMode in Self.apply(newMode) }
+            .onAppear { Self.apply(mode) }
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { if let w = nsView.window { onSet(w) } }
+    private static func apply(_ mode: AppearanceMode) {
+        switch mode {
+        case .system:
+            NSApp.appearance = nil
+        case .light:
+            NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
     }
 }
 
