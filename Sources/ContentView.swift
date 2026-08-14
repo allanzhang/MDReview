@@ -43,8 +43,13 @@ struct ContentView: View {
             }
             .padding(4)
             .background {
+                // 底座层次：light 下深灰底 + 细描边（组件边界清晰），dark 下保持浅白底
                 RoundedRectangle(cornerRadius: 9)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(systemScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.07))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 9)
+                    .stroke(systemScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.08), lineWidth: 1)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
@@ -60,6 +65,14 @@ struct ContentView: View {
         .toolbar(removing: .sidebarToggle)
         // 侧栏最小宽度：防 Outline/History 按钮文字换行（拉到最窄也不难看）
         .navigationSplitViewColumnWidth(min: 200, ideal: 250)
+        // 侧栏层次感：light 下叠实背景与内容区明确分界（sidebar 系统材质在 light 下太透）
+        .background {
+            if systemScheme == .dark {
+                Color.clear
+            } else {
+                Color(nsColor: .windowBackgroundColor).opacity(0.55)
+            }
+        }
     }
 
     @ViewBuilder
@@ -332,6 +345,9 @@ private struct SidebarSegment: View {
     let isSelected: Bool
     let action: () -> Void
 
+    @Environment(\.colorScheme) private var scheme
+    @State private var isHovering = false
+
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
@@ -342,11 +358,17 @@ private struct SidebarSegment: View {
         }
         .buttonStyle(.plain)
         .background {
-            RoundedRectangle(cornerRadius: 7)
-                .fill(isSelected ? Color.accentColor : Color.clear)
+            if isSelected {
+                RoundedRectangle(cornerRadius: 7).fill(Color.accentColor)
+            } else if isHovering {
+                // hover 反馈：light 深灰 / dark 浅白，组件可交互性一目了然
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(scheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.06))
+            }
         }
         .foregroundStyle(isSelected ? Color.white : Color.primary)
         .animation(.easeOut(duration: 0.12), value: isSelected)
+        .onHover { isHovering = $0 }
     }
 }
 
@@ -401,6 +423,7 @@ struct SearchBar: View {
     let onClose: () -> Void
     /// 出现即聚焦输入框。
     @FocusState private var isFocused: Bool
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         HStack(spacing: 10) {
@@ -436,14 +459,16 @@ struct SearchBar: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background {
-            // 圆角 18 + ultraThinMaterial 毛玻璃：透明浮动面板里 glassEffect 会黑底，
-            // material 模糊面板背后内容；ultraThin 更通透有玻璃感
+            // 层次感：light 下用偏实底色 + 深描边（毛玻璃太透导致边界模糊）；
+            // dark 下保持 ultraThinMaterial 毛玻璃（透明浮动面板里 glassEffect 会黑底）
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(scheme == .dark
+                      ? AnyShapeStyle(.ultraThinMaterial)
+                      : AnyShapeStyle(Color(nsColor: .windowBackgroundColor).opacity(0.62)))
         }
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(.separator.opacity(0.4), lineWidth: 1)
+                .stroke(scheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.14), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.25), radius: 22, y: 10)
     }

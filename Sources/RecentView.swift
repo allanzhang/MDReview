@@ -34,6 +34,7 @@ private struct RecentRow: View {
     let action: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.colorScheme) private var scheme
 
     private var rowShape: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
@@ -62,7 +63,10 @@ private struct RecentRow: View {
         .buttonStyle(.plain)
         .background {
             if isHovering {
-                rowShape.fill(Color.primary.opacity(0.06))
+                // 层次感：light 下 hover 更实（浅灰叠白底不可见），dark 保持现状
+                rowShape.fill(scheme == .dark
+                              ? Color.white.opacity(0.06)
+                              : Color.black.opacity(0.08))
             }
         }
         .onHover { isHovering = $0 }

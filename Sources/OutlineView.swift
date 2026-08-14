@@ -43,6 +43,7 @@ private struct OutlineRow: View {
     let action: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.colorScheme) private var scheme
 
     /// 行背景形状：首行顶部圆角、末行底部圆角、中间直角（同 sidebar 列表观感）。
     private var rowShape: UnevenRoundedRectangle {
@@ -66,10 +67,15 @@ private struct OutlineRow: View {
         }
         .buttonStyle(.plain)
         .background {
+            // 层次感：light 下 hover/激活更实（浅灰叠白底 6% 不可见），dark 保持现状
             if isActive {
-                rowShape.fill(Color.accentColor.opacity(0.18))
+                rowShape.fill(scheme == .dark
+                              ? Color.accentColor.opacity(0.20)
+                              : Color.accentColor.opacity(0.26))
             } else if isHovering {
-                rowShape.fill(Color.primary.opacity(0.06))
+                rowShape.fill(scheme == .dark
+                              ? Color.white.opacity(0.06)
+                              : Color.black.opacity(0.08))
             }
         }
         .onHover { isHovering = $0 }
