@@ -411,7 +411,10 @@ struct SearchBar: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .focused($isFocused)
-                .onAppear { isFocused = true }
+                .onAppear {
+                    // 延迟聚焦：等待浮动面板成为 key window 后输入框才可聚焦
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { isFocused = true }
+                }
             if renderer.searchCount > 0 {
                 Text("\(renderer.searchCurrent)/\(renderer.searchCount)")
                     .font(.callout)
@@ -433,16 +436,15 @@ struct SearchBar: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background {
-            // 大圆角 + material 毛玻璃：在透明浮动面板里 glassEffect 会渲染成黑底，
-            // material 更可靠，模糊面板背后内容（Spotlight 观感）
+            // 大圆角 + ultraThinMaterial 毛玻璃：透明浮动面板里 glassEffect 会黑底，
+            // material 模糊面板背后内容；ultraThin 更通透有玻璃感
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
+                .fill(.ultraThinMaterial)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(.separator.opacity(0.4), lineWidth: 1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: .black.opacity(0.25), radius: 22, y: 10)
     }
 }

@@ -1,7 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// 浮动搜索面板：点击搜索按钮时，在窗口标题栏中央（文件名/路径位置）悬空浮出一个
+/// 无边框面板必须能成为 key window，否则内部输入框无法聚焦（borderless 默认 canBecomeKey=false）。
+@MainActor private final class KeyablePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+/// 浮动搜索面板：点击搜索按钮时，在 Open 与 Search 按钮之间居中悬空浮出一个
 /// 无边框玻璃搜索框（Spotlight 式）。原窗口布局完全不变，面板是独立浮层。
 @MainActor final class SearchPanelController {
     static let shared = SearchPanelController()
@@ -24,11 +30,13 @@ import SwiftUI
         let height: CGFloat = 58
         let bar = SearchBar(renderer: renderer, text: text, onClose: onClose)
         let host = NSHostingView(rootView: bar)
-        // 透明背景：面板透明，让 SwiftUI material 毛玻璃生效
+        // 透明 + 圆角裁剪（在宿主层裁圆角，保证圆角外透出背后内容）
         host.wantsLayer = true
+        host.layer?.cornerRadius = 20
+        host.layer?.masksToBounds = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
 
-        let panel = NSPanel(
+        let panel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -48,8 +56,6 @@ import SwiftUI
 
         // 跟随主窗口移动/缩放
         observe(window)
-        // 面板内 SearchBar 的 onAppear 聚焦输入框
-        DispatchQueue.main.async { host.rootView = bar }
     }
 
     func hide() {
@@ -61,8 +67,8 @@ import SwiftUI
         observedWindow = nil
     }
 
-    /// 面板定位：水平居中对齐「Open」与「Search」按钮中点（按按钮 toolTip 匹配），
-    /// 宽度随窗口 55% 自适应（320-720）；匹配失败回退窗口顶部居中。
+    /// 面板定位：水平居中对齐「Open」与「Search」按钮中点（NSToolbarItem.label 匹配，
+    /// 比 toolTip 可靠），宽度随窗口 55% 自适应（320-720）；匹配失败回退窗口顶部居中。
     private func position(_ panel: NSPanel, relativeTo window: NSWindow) {
         let width = max(320, min(window.frame.width * 0.55, 720))
         let height = panel.frame.height
@@ -74,11 +80,11 @@ import SwiftUI
             var searchFrame: NSRect?
             for item in toolbar.items {
                 guard let view = item.view else { continue }
-                let tip = view.toolTip ?? ""
+                let label = item.label.lowercased()
                 let r = view.convert(view.bounds, to: nil)   // 屏幕坐标（AppKit 左下原点）
-                if tip.contains("Open Markdown") {
+                if label.contains("open") {
                     openFrame = r
-                } else if tip.contains("Search in Document") {
+                } else if label.contains("search") {
                     searchFrame = r
                 }
             }
