@@ -46,27 +46,6 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebar: some View {
         VStack(spacing: 0) {
-            // 视图切换：两个大按钮（图标 + 文字）
-            HStack(spacing: 4) {
-                SidebarSegment(title: "Outline", systemImage: "list.bullet",
-                               isSelected: doc.showOutline) { doc.showOutline = true }
-                SidebarSegment(title: "History", systemImage: "clock",
-                               isSelected: !doc.showOutline) { doc.showOutline = false }
-            }
-            .padding(4)
-            .background {
-                // 底座层次：light 下深灰底 + 细描边（组件边界清晰），dark 下保持浅白底
-                RoundedRectangle(cornerRadius: 9)
-                    .fill(systemScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.07))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 9)
-                    .stroke(systemScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.08), lineWidth: 1)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity)
-            Divider()
             if doc.showOutline {
                 OutlineView(renderer: renderer)
             } else {
@@ -128,6 +107,27 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
+        // Outline/History 视图切换：放标题栏 leading、与红绿灯（最小化/最大化）同排，
+        // 避免多 Tab 时侧栏顶部 Segment 布局错乱
+        ToolbarItem(placement: .navigation) {
+            HStack(spacing: 4) {
+                SidebarSegment(title: "Outline", systemImage: "list.bullet",
+                               isSelected: doc.showOutline) { doc.showOutline = true }
+                SidebarSegment(title: "History", systemImage: "clock",
+                               isSelected: !doc.showOutline) { doc.showOutline = false }
+            }
+            .frame(width: 196)
+            .padding(3)
+            .background {
+                // 底座层次：light 下深灰底 + 细描边（组件边界清晰），dark 下保持浅白底
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(systemScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.07))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(systemScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.08), lineWidth: 1)
+            }
+        }
         ToolbarItem(placement: .navigation) {
             Button {
                 // 无动画直接切换：NavigationSplitView 列动画会驱动 detail 区 WKWebView 连续 resize 重排，长文档下明显卡顿
