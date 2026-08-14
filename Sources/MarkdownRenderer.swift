@@ -188,7 +188,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         webView.evaluateJavaScript(script) { [weak self] result, _ in
             guard let self else { return }
             let count = (result as? Int) ?? 0
-            DispatchQueue.main.async { self.searchCount = count; self.searchCurrent = 0 }
+            // doSearch 已自动跳到第一个关键字，计数显示 1/N（无结果显示 0）
+            DispatchQueue.main.async { self.searchCount = count; self.searchCurrent = count > 0 ? 1 : 0 }
         }
     }
 
@@ -337,6 +338,12 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         if(last > 0){ if(last < txt.length){ frag.appendChild(document.createTextNode(txt.substring(last))); } node.parentNode.replaceChild(frag, node); }
       });
       window.__marks = Array.prototype.slice.call(document.querySelectorAll('mark.srch'));
+      // 搜索即跳转到第一个关键字处（标准 Cmd+F 行为）
+      if(window.__marks.length){
+        window.__searchIdx = 0;
+        window.__marks[0].classList.add('srch-cur');
+        window.__marks[0].scrollIntoView({behavior:'smooth', block:'center'});
+      }
       return window.__marks.length;
     };
     window.searchGo = function(dir){
@@ -550,17 +557,6 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
               state.pos = end + 1;
               return true;
             });
-            // 任务复选框：可点选；勾选后整行删除线+变淡（GitHub 风格，仅 UI 层、不回写源文件）。
-            var contentEl = document.getElementById('content');
-            if (contentEl) {
-              contentEl.addEventListener('click', function(e){
-                var t = e.target;
-                if (t && t.matches && t.matches('li.task input[type="checkbox"]')){
-                  var li = t.closest('li');
-                  if (li){ li.classList.toggle('done', t.checked); }
-                }
-              });
-            }
             var src = \#(mdJSON);
             var chunkMode = '\#(chunkMode)';
 
@@ -602,8 +598,9 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             // 段渲染 + 后处理：标题 id/锚点、图片懒加载、KaTeX、代码高亮（分帧）
             window.__mdit.renderSection = function(section, container, syncHighlight){
               var html = window.__mdit.render(section.text);
-              html = html.replace(/<li>\s*\[ \]\s+/g, '<li class="task"><input type="checkbox"> ')
-                         .replace(/<li>\s*\[[xX]\]\s+/g, '<li class="task done"><input type="checkbox" checked> ');
+              // 任务复选框仅展示（不可编辑）：[ ] 显示未勾选，[x]/[X] 显示勾选，均 disabled。
+              html = html.replace(/<li>\s*\[ \]\s+/g, '<li class="task"><input type="checkbox" disabled> ')
+                         .replace(/<li>\s*\[[xX]\]\s+/g, '<li class="task"><input type="checkbox" disabled checked> ');
               container.innerHTML = html;
               var hs = container.querySelectorAll('h1,h2,h3,h4,h5,h6');
               for (var k = 0; k < hs.length; k++){

@@ -478,14 +478,26 @@ struct SearchBar: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-            Button { renderer.searchPrev() } label: { Image(systemName: "chevron.up") }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .disabled(renderer.searchCount == 0)
-            Button { renderer.searchNext() } label: { Image(systemName: "chevron.down") }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .disabled(renderer.searchCount == 0)
+            // 箭头按钮：图标小、裸点击区域只有图标本身大小基本点不到，给 label 撑大
+            // 固定 frame + contentShape，26x26 可点区域（图标居中）。
+            Button { renderer.searchPrev() } label: {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(renderer.searchCount == 0)
+            Button { renderer.searchNext() } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(renderer.searchCount == 0)
             Button { onClose() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -498,8 +510,9 @@ struct SearchBar: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(scheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.16), lineWidth: 1)
+                // dark 下 0.10 太淡、与模糊背景融为一体，提到 0.24 让边界清晰
+                .stroke(scheme == .dark ? Color.white.opacity(0.24) : Color.black.opacity(0.16), lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.25), radius: 22, y: 10)
+        .shadow(color: .black.opacity(scheme == .dark ? 0.5 : 0.25), radius: 22, y: 10)
     }
 }
