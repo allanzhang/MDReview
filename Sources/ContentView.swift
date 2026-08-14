@@ -458,13 +458,15 @@ struct SearchBar: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        HStack(spacing: 10) {
+        // 高度自适应：面板高度 = 按钮背景高度（可能 28~56 不等），
+        // 不再写死垂直 padding，行内容垂直居中于面板内，矮面板也不会被裁剪。
+        HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 16, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
             TextField("Search", text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15))
+                .font(.system(size: 14))
                 .focused($isFocused)
                 .onAppear {
                     // 延迟聚焦：等待浮动面板成为 key window 后输入框才可聚焦
@@ -489,7 +491,7 @@ struct SearchBar: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         // 完全高斯模糊：NSVisualEffectView（popover 材质，系统级高强度模糊），
         // 比 SwiftUI material 更彻底——呼出后搜索框与背后内容明显分离
         .background(VisualEffectBackground(material: .popover))

@@ -16,7 +16,9 @@ import SwiftUI
 ///   convertToScreen 转换后 setFrameOrigin（单位混用是"飞到窗外"的根源）。
 /// - 拖动/缩放同步：didMove/didResize 监听重定位，但【尺寸缓存】——移动时不再反复
 ///   setContentSize 触发布局，只 setFrameOrigin，消除此前的"卡卡"感。
-/// - 垂直：面板在工具栏条内居中且上下留白（悬空感），不贴窗口顶。
+/// - 垂直：直接量 Open/Search 按钮视图的实际坐标——面板高度 = 按钮背景高度，
+///   垂直居中于按钮行（不猜 chrome，不贴窗口顶；标题栏/工具栏高度随系统/外观变化，
+///   猜 chrome 正是此前"高度对不上、不居中"的根因）。
 @MainActor final class SearchPanelController {
     static let shared = SearchPanelController()
 
@@ -65,6 +67,12 @@ import SwiftUI
         self.panel = panel
 
         observe(window)
+        // 工具栏可能在面板刚显示时尚未完成布局，稍后重测一次按钮坐标，
+        // 避免首次呼出时量到 0 尺寸而回退到 chrome 估算。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak panel, weak window] in
+            guard let self, let panel, let window, self.panel === panel, panel.isVisible else { return }
+            self.position(panel, relativeTo: window)
+        }
     }
 
     func hide() {
@@ -79,14 +87,16 @@ import SwiftUI
     }
 
     /// 面板定位与尺寸（全部【屏幕坐标】）：
-    /// - 高度 = 工具栏按钮区域行高（chromeH，与按钮背景区域完全一致）
+    /// - 高度 = Open/Search 按钮视图的实际高度（即按钮背景高度，直接量按钮）
     /// - 宽度 = Open/Search 按钮水平距离的 50%（下限 220）
-    /// - 水平居中于两按钮中点；垂直 = 覆盖整个按钮区域行（顶对齐窗口顶，
-    ///   视觉上融入 toolbar 区域，不再悬空分裂）
+    /// - 水平居中于两按钮中点；垂直居中于按钮行（不再贴窗口顶）
     /// 按钮识别：toolTip（.help 设置）与 label 都查——SwiftUI toolbar item 的 label 常为空。
     private func position(_ panel: NSPanel, relativeTo window: NSWindow) {
         var openFrame: NSRect?
         var searchFrame: NSRect?
+        var rowTop = -CGFloat.greatestFiniteMagnitude
+        var rowBottom = CGFloat.greatestFiniteMagnitude
+        var hasButtons = false
 
         if let toolbar = window.toolbar {
             for item in toolbar.items {
@@ -94,20 +104,25 @@ import SwiftUI
                 let id = (item.label + " " + (view.toolTip ?? "")).lowercased()
                 // ⚠️ convert(bounds, to: nil) = 窗口坐标，必须经 convertToScreen 转屏幕坐标
                 let r = vw.convertToScreen(view.convert(view.bounds, to: nil))
-                if id.contains("open") {
+                guard r.width > 0, r.height > 0 else { continue }
+                let isOpen = id.contains("open")
+                let isSearch = id.contains("search")
+                if isOpen {
                     openFrame = r
-                } else if id.contains("search") {
+                }
+                if isSearch {
                     searchFrame = r
+                }
+                if isOpen || isSearch {
+                    hasButtons = true
+                    rowTop = max(rowTop, r.maxY)
+                    rowBottom = min(rowBottom, r.minY)
                 }
             }
         }
 
-        // 按钮区域行高：窗口顶部 chrome 总高
-        let chromeH = max(32, window.frame.height - window.contentLayoutRect.height)
-        let height = chromeH
         let width: CGFloat
         let x: CGFloat
-        let y: CGFloat
 
         if let o = openFrame, let s = searchFrame {
             width = max(220, (s.midX - o.midX) * 0.5)
@@ -118,8 +133,19 @@ import SwiftUI
             width = max(220, min(wf.width * 0.4, 520))
             x = wf.midX - width / 2
         }
-        // 垂直：面板顶 = 窗口顶，覆盖整个按钮区域行（与按钮区域完全同高同区）
-        y = window.frame.maxY - chromeH
+
+        let height: CGFloat
+        let y: CGFloat
+        if hasButtons {
+            // 按钮行高 = 按钮视图上下沿之差；垂直中心 = 按钮行中心
+            height = max(24, rowTop - rowBottom)
+            y = (rowTop + rowBottom) / 2 - height / 2
+        } else {
+            // 回退：量不到按钮时保持旧的 chrome 估算
+            let chromeH = max(32, window.frame.height - window.contentLayoutRect.height)
+            height = chromeH
+            y = window.frame.maxY - chromeH
+        }
 
         // 尺寸缓存：拖动/缩放时尺寸不变则跳过 setContentSize（避免反复布局卡顿）
         let size = NSSize(width: width, height: height)
