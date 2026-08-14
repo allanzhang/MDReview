@@ -11,13 +11,15 @@ import SwiftUI
 /// 无边框玻璃搜索框（Spotlight 式）。原窗口布局完全不变，面板是独立浮层。
 ///
 /// 实现要点（历史教训）：
-/// - 独立 NSPanel（非 childWindow——macOS 26 上 childWindow+borderless 面板偶发不显示）。
+/// - **childWindow（AppKit 主流做法）**：`addChildWindow(panel, ordered: .above)`，
+///   子窗口随父窗口移动**原生同步**，拖动无需任何监听/定时器。
+///   子窗口**不设独立层级**（`level`/`isFloatingPanel` 是独立浮层用法，child 应跟随父窗口；
+///   macOS 26 上 child+borderless+独立层级偶发不显示——上一版失败的元凶之一）。
 /// - 定位统一用【屏幕坐标】：按钮 convert(bounds, to: nil) 是窗口坐标，必须经
 ///   convertToScreen 转换后 setFrameOrigin（单位混用是"飞到窗外"的根源）。
-/// - 拖动/缩放同步：**didMoveNotification 只在拖动结束才触发，不能做实时跟随**，
-///   故拖动期间用 eventTracking 模式 60Hz 定时器实时重定位（平时不触发、零开销）；
-///   didMove/didResize 监听做收尾与缩放同步。【尺寸缓存】——移动时不再反复
-///   setContentSize 触发布局，只 setFrameOrigin，保证拖动流畅。
+/// - 缩放时保留 didResize 观察者：窗口变宽/变窄会使工具栏按钮重排（Open↔Search
+///   中点水平移动），需重测面板位置；拖动移动由 childWindow 原生跟随，不需要监听。
+/// - 【尺寸缓存】——重定位时尺寸不变则跳过 setContentSize，只 setFrameOrigin。
 /// - 垂直：直接量 Open/Search 按钮视图的实际坐标——面板高度 = 按钮背景高度，
 ///   垂直居中于按钮行（不猜 chrome，不贴窗口顶；标题栏/工具栏高度随系统/外观变化，
 ///   猜 chrome 正是此前"高度对不上、不居中"的根因）。
@@ -25,10 +27,8 @@ import SwiftUI
     static let shared = SearchPanelController()
 
     private var panel: NSPanel?
-    private weak var observedWindow: NSWindow?
-    /// 拖动实时跟随定时器：只挂在 eventTracking 模式，拖动/缩放期间才触发。
-    private var trackingTimer: Timer?
-    /// 尺寸缓存：拖动时尺寸不变则跳过 setContentSize（避免反复布局卡顿）。
+    private weak var parentWindow: NSWindow?
+    /// 尺寸缓存：位置不变时跳过 setContentSize（避免反复布局卡顿）。
     private var lastSize: NSSize = .zero
 
     private init() {}
@@ -57,21 +57,22 @@ import SwiftUI
             backing: .buffered,
             defer: false
         )
-        panel.isFloatingPanel = true
-        panel.level = .floating
+        // ⚠️ 子窗口不设 level / isFloatingPanel：跟随父窗口层级（独立层级在 macOS 26 偶发不显示）
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false          // 阴影由 SwiftUI SearchBar 自身绘制
         panel.hidesOnDeactivate = false
         panel.contentView = host
 
+        // 子窗口：随父窗口移动/缩放自动同步（主流做法，零监听零定时器）
+        window.addChildWindow(panel, ordered: .above)
         lastSize = .zero
         position(panel, relativeTo: window)
         panel.makeKeyAndOrderFront(nil)
         self.panel = panel
+        parentWindow = window
 
-        observe(window)
-        startTracking(window)
+        observeResize(window)
         // 工具栏可能在面板刚显示时尚未完成布局，稍后重测一次按钮坐标，
         // 避免首次呼出时量到 0 尺寸而回退到 chrome 估算。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak panel, weak window] in
@@ -81,14 +82,14 @@ import SwiftUI
     }
 
     func hide() {
-        panel?.orderOut(nil)
-        trackingTimer?.invalidate()
-        trackingTimer = nil
-        if let w = observedWindow {
-            NotificationCenter.default.removeObserver(self, name: NSWindow.didMoveNotification, object: w)
-            NotificationCenter.default.removeObserver(self, name: NSWindow.didResizeNotification, object: w)
+        if let panel, let window = parentWindow {
+            window.removeChildWindow(panel)
         }
-        observedWindow = nil
+        panel?.orderOut(nil)
+        if let window = parentWindow {
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didResizeNotification, object: window)
+        }
+        parentWindow = nil
         panel = nil
         lastSize = .zero
     }
@@ -154,7 +155,7 @@ import SwiftUI
             y = window.frame.maxY - chromeH
         }
 
-        // 尺寸缓存：拖动/缩放时尺寸不变则跳过 setContentSize（避免反复布局卡顿）
+        // 尺寸缓存：重定位时尺寸不变则跳过 setContentSize（避免反复布局卡顿）
         let size = NSSize(width: width, height: height)
         if size != lastSize {
             panel.setContentSize(size)
@@ -163,48 +164,20 @@ import SwiftUI
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
-    private func observe(_ window: NSWindow) {
-        if let w = observedWindow, w !== window {
-            NotificationCenter.default.removeObserver(self, name: NSWindow.didMoveNotification, object: w)
+    /// 仅窗口缩放时重测面板位置：窗口变宽/变窄会让工具栏按钮重排（Open↔Search
+    /// 中点水平移动），childWindow 只跟随窗口 frame，不会跟随按钮重排。
+    /// 拖动移动无需监听——子窗口随父窗口原生同步。
+    private func observeResize(_ window: NSWindow) {
+        if let w = parentWindow, w !== window {
             NotificationCenter.default.removeObserver(self, name: NSWindow.didResizeNotification, object: w)
         }
-        observedWindow = window
         NotificationCenter.default.addObserver(
-            self, selector: #selector(windowFrameChanged(_:)),
-            name: NSWindow.didMoveNotification, object: window
-        )
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(windowFrameChanged(_:)),
+            self, selector: #selector(windowDidResize(_:)),
             name: NSWindow.didResizeNotification, object: window
         )
     }
 
-    /// 实时跟随：NSWindow.didMoveNotification 只在拖动结束（或停顿约半秒）才发送，
-    /// 观察者方案在拖动过程中面板会停在原地、松手才跳过去（用户反馈的"不同步"）。
-    /// 改为在 eventTracking 模式下跑 60Hz 定时器，拖动期间每帧重定位；
-    /// 平时（default 模式）定时器不触发，无额外开销。
-    private func startTracking(_ window: NSWindow) {
-        trackingTimer?.invalidate()
-        let timer = Timer(
-            timeInterval: 1.0 / 60.0,
-            target: self,
-            selector: #selector(trackingTick(_:)),
-            userInfo: nil,
-            repeats: true
-        )
-        RunLoop.main.add(timer, forMode: .eventTracking)
-        trackingTimer = timer
-    }
-
-    @objc private func trackingTick(_ timer: Timer) {
-        guard let window = observedWindow, let panel, isVisible else {
-            timer.invalidate()
-            return
-        }
-        position(panel, relativeTo: window)
-    }
-
-    @objc private func windowFrameChanged(_ note: Notification) {
+    @objc private func windowDidResize(_ note: Notification) {
         guard let window = note.object as? NSWindow, let panel, isVisible else { return }
         position(panel, relativeTo: window)
     }
