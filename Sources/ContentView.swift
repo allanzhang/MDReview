@@ -41,31 +41,40 @@ struct ContentView: View {
         // 外观切换：即时注入 JS 生效，不重载页面（保留滚动位置与渲染状态）
         .onChange(of: doc.appearance) { _, mode in renderer.applyAppearance(mode) }
         .onAppear { DispatchQueue.main.async { renderCurrent() } }
+        // 菜单命令（File/View）经 NotificationCenter 转发到这里执行
+        .onReceive(NotificationCenter.default.publisher(for: .mdreviewMenuAction)) { note in
+            guard let action = note.object as? MenuAction else { return }
+            handleMenuAction(action)
+        }
+    }
+
+    private func handleMenuAction(_ action: MenuAction) {
+        switch action {
+        case .openPanel: openPanel()
+        case .toggleSidebar:
+            doc.columnVisibility = (doc.columnVisibility == .all) ? .detailOnly : .all
+        case .toggleSource: withAnimation { doc.showSource.toggle() }
+        case .appearanceSystem: doc.appearance = .system
+        case .appearanceLight: doc.appearance = .light
+        case .appearanceDark: doc.appearance = .dark
+        case .exportHTML: exportHTML()
+        case .exportPDF: exportPDF()
+        case .openInExternalEditor: openInExternalEditor()
+        }
     }
 
     @ViewBuilder
     private var sidebar: some View {
         VStack(spacing: 0) {
-            // 视图切换：两个大按钮（图标 + 文字）
+            // 视图切换：两个大按钮（图标 + 文字），无自绘底座/描边
             HStack(spacing: 4) {
                 SidebarSegment(title: "Outline", systemImage: "list.bullet",
                                isSelected: doc.showOutline) { doc.showOutline = true }
                 SidebarSegment(title: "History", systemImage: "clock",
                                isSelected: !doc.showOutline) { doc.showOutline = false }
             }
-            .padding(4)
-            .background {
-                // 底座层次：light 下深灰底 + 细描边（组件边界清晰），dark 下保持浅白底
-                RoundedRectangle(cornerRadius: 9)
-                    .fill(systemScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.07))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 9)
-                    .stroke(systemScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.08), lineWidth: 1)
-            }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .frame(maxWidth: .infinity)
             Divider()
             if doc.showOutline {
                 OutlineView(renderer: renderer)
@@ -153,6 +162,7 @@ struct ContentView: View {
                                                         renderer.search("")
                                                     })
             } label: { Label("Search", systemImage: "magnifyingglass") }
+                .keyboardShortcut("f", modifiers: .command)
                 .help("Search in Document")
         }
         // 外观切换：单按钮，太阳/月亮图标高亮代表当前状态。
@@ -174,28 +184,6 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .help(isManualAppearance ? "Override active — click to follow system" : "Follow system — click to override")
-        }
-        // 次级功能收纳进 More 菜单，保持工具栏克制（源码对照 / 外部编辑器）
-        ToolbarItem(placement: .automatic) {
-            Menu {
-                Button {
-                    withAnimation { doc.showSource.toggle() }
-                } label: {
-                    Label(doc.showSource ? "Rendered View" : "Source View",
-                          systemImage: doc.showSource ? "doc.richtext" : "doc.plaintext")
-                }
-                Divider()
-                Button {
-                    openInExternalEditor()
-                } label: {
-                    Label("Open in External Editor", systemImage: "pencil.and.outline")
-                }
-                .keyboardShortcut("e", modifiers: .command)
-                .disabled(doc.url == nil)
-            } label: {
-                Label("More", systemImage: "ellipsis.circle")
-            }
-            .help("More")
         }
         ToolbarItem(placement: .automatic) {
             Menu {
@@ -466,6 +454,7 @@ struct SearchBar: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .focused($isFocused)
+                .onExitCommand { onClose() }   // Esc 关闭搜索面板
                 .onAppear {
                     // 延迟聚焦：等待浮动面板成为 key window 后输入框才可聚焦
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { isFocused = true }

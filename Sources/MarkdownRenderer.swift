@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import WebKit
 import SwiftUI
 
@@ -290,6 +291,10 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     static func htmlTemplate(markdown: String, docName: String? = nil, savedProgress: String? = nil, chunkMode: String = "auto", appearance: AppearanceMode = .system) -> String {
         let mdJSON = jsonString(for: markdown)
         let renderScript = "<script>\(jsRenderInline(mdJSON: mdJSON, chunkMode: chunkMode))</script>"
+        // 正文基准字号跟随系统（body 文本样式，等比放大到阅读尺寸）；导出 HTML 无此变量时 CSS 回退 16px
+        let bodySize = NSFont.preferredFont(forTextStyle: .body).pointSize
+        let baseSize = max(15.0, bodySize * 1.2)
+        let fontVar = "<style>:root { --md-base: \(String(format: "%.1f", baseSize))px; }</style>"
         // 注入文件名供阅读进度记忆使用（UserDefaults key 区分不同文档）
         let docNameScript = "<script>window.__docName = \(jsonString(for: docName ?? ""));</script>"
         // 注入上次阅读位置（章节 id；无则空串），页面渲染完成后 __restoreProgress 使用
@@ -299,7 +304,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         let mermaidScript = markdown.contains("```mermaid") ? "<script>\(bundled.mermaid)</script>" : ""
 
         return """
-        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(headHTML)\(scriptsHTML)\(docNameScript)\(progressScript)\(themeScript)\(mermaidScript)</head>
+        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(headHTML)\(fontVar)\(scriptsHTML)\(docNameScript)\(progressScript)\(themeScript)\(mermaidScript)</head>
         <body><article id="content"></article>\(renderScript)</body></html>
         """
     }

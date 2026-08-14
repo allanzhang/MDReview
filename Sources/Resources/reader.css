@@ -12,7 +12,8 @@ body {
   margin: 0 auto;
   padding: 40px 28px 120px;
   line-height: 1.75;
-  font-size: 16px;
+  /* 基准字号由 Swift 侧按系统 body 文本样式注入（--md-base）；导出/回退 16px */
+  font-size: var(--md-base, 16px);
   word-wrap: break-word;
 }
 #content h1, #content h2, #content h3, #content h4, #content h5, #content h6 {

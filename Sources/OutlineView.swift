@@ -59,7 +59,7 @@ private struct OutlineRow: View {
             Text(heading.text.isEmpty ? "(Untitled)" : heading.text)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 7)
+                .padding(.vertical, 4)
                 .padding(.horizontal, 12)
                 .padding(.leading, indent)
                 .contentShape(Rectangle())
