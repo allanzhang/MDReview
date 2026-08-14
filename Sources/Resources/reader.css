@@ -114,3 +114,16 @@ mark.srch-cur { background: #ffb703; color: #1f2328; }
   #content h1, #content h2, #content h3, #content h4, #content h5, #content h6 { page-break-after: avoid; }
   mark.srch, mark.srch-cur { background: #fff3a0 !important; color: #1f2328 !important; }
 }
+
+/* Mermaid 图表：容器去代码块底色、居中，SVG 自适应宽度 */
+#content pre.mermaid-box {
+  background: transparent;
+  border: none;
+  text-align: center;
+  padding: 0.8em 0;
+  overflow-x: auto;
+}
+#content pre.mermaid-box svg {
+  max-width: 100%;
+  height: auto;
+}

@@ -140,7 +140,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// 静态资源一次性读取缓存：htmlTemplate 每渲染一次都拼接数 MB 字符串，
     /// 若每次重读 Bundle + 处理字体路径会放大打开文档时的主线程卡顿。
     /// （stored property initializer 不能引用 Self 方法，故读取逻辑直接内联于闭包。）
-    private static let bundled: (readerCSS: String, katexCSS: String, md: String, kx: String, ar: String, footnote: String, hljs: String, hljsLight: String, hljsDark: String) = {
+    /// mermaid.min.js 较大（约 3.5MB），**按需内联**：仅当文档含 mermaid 代码块才注入，普通文档零负担。
+    private static let bundled: (readerCSS: String, katexCSS: String, md: String, kx: String, ar: String, footnote: String, hljs: String, hljsLight: String, hljsDark: String, mermaid: String) = {
         let bundle = Bundle.main
         let readerCSS = (try? String(contentsOf: bundle.url(forResource: "reader", withExtension: "css")!)) ?? ""
         var kcss = (try? String(contentsOf: bundle.url(forResource: "katex.min", withExtension: "css")!)) ?? ""
@@ -158,7 +159,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
                 (try? String(contentsOf: bundle.url(forResource: "markdown-it-footnote.min", withExtension: "js")!)) ?? "",
                 (try? String(contentsOf: bundle.url(forResource: "highlight.min", withExtension: "js")!)) ?? "",
                 (try? String(contentsOf: bundle.url(forResource: "github.min", withExtension: "css")!)) ?? "",
-                (try? String(contentsOf: bundle.url(forResource: "github-dark.min", withExtension: "css")!)) ?? "")
+                (try? String(contentsOf: bundle.url(forResource: "github-dark.min", withExtension: "css")!)) ?? "",
+                (try? String(contentsOf: bundle.url(forResource: "mermaid.min", withExtension: "js")!)) ?? "")
     }()
     private static let headHTML: String = {
         let b = bundled
@@ -173,13 +175,15 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// 图片相对路径由 WebView 的 baseURL（.md 目录）解析。
     /// markdown 内容直接内联，页面加载即完成渲染并回传大纲，单次导航更稳健。
     /// internal：导出 HTML 也复用同一模板（自包含、离线可开）。
+    /// mermaid 按需：仅当 markdown 含 ```mermaid 代码块才内联约 3.5MB 渲染库，普通文档零负担。
     static func htmlTemplate(markdown: String) -> String {
         let mdJSON = jsonString(for: markdown)
         // 页面加载时立即渲染并回传大纲
         let renderScript = "<script>\(jsRenderInline(mdJSON: mdJSON))</script>"
+        let mermaidScript = markdown.contains("```mermaid") ? "<script>\(bundled.mermaid)</script>" : ""
 
         return """
-        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(headHTML)\(scriptsHTML)</head>
+        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(headHTML)\(scriptsHTML)\(mermaidScript)</head>
         <body><article id="content"></article>\(renderScript)</body></html>
         """
     }
@@ -203,7 +207,13 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
       var root = document.getElementById('content');
       var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
       var nodes = []; var n;
-      while((n = walker.nextNode())){ var p = n.parentNode; if(p && p.nodeName !== 'SCRIPT' && p.nodeName !== 'STYLE' && p.nodeName !== 'MARK'){ nodes.push(n); } }
+      while((n = walker.nextNode())){
+        var p = n.parentNode;
+        // 跳过脚本/样式/已有 mark；且不进入 mermaid SVG 与 KaTeX 公式内部，
+        // 否则 mark 包裹会破坏图表/公式渲染（兼容性取舍）
+        if(p && p.nodeName !== 'SCRIPT' && p.nodeName !== 'STYLE' && p.nodeName !== 'MARK'
+           && !(p.ownerSVGElement) && !(p.closest && p.closest('.katex'))){ nodes.push(n); }
+      }
       var re = new RegExp(escapeRegExp(term), 'gi');
       nodes.forEach(function(node){
         var txt = node.nodeValue; var m; var last = 0; re.lastIndex = 0;
@@ -291,7 +301,36 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             var outline = [];
             heads.forEach(function(h, i){ if(!h.id){ h.id = 'h-' + i; } outline.push({level: parseInt(h.tagName.substring(1)), text: h.textContent, id: h.id}); });
             if(window.renderMathInElement){ try { renderMathInElement(el, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false}); } catch(e){} }
-            // KaTeX 渲染（改变布局）完成后才缓存标题列表与文档坐标，供 __onScroll 零布局查询使用
+            // Mermaid 按需渲染：仅当库已内联（文档含 mermaid 代码块）且存在代码块时执行。
+            // 取舍原则：语法错误/渲染异常一律 catch 保留原代码块（降级展示），绝不让图表问题阻塞阅读。
+            (function(){
+              var mmdEls = document.querySelectorAll('#content pre code.language-mermaid');
+              if(!window.mermaid || !mmdEls.length){ return; }
+              try {
+                window.mermaid.initialize({
+                  startOnLoad: false,
+                  securityLevel: 'strict',
+                  theme: (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'default',
+                  fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif'
+                });
+                var jobs = [];
+                Array.prototype.forEach.call(mmdEls, function(codeEl){
+                  codeEl.classList.remove('hljs');
+                  jobs.push(window.mermaid.render('mmd-' + (window.__mmdId = (window.__mmdId||0) + 1), codeEl.textContent)
+                    .then(function(res){
+                      var pre = codeEl.closest('pre');
+                      if(pre){ pre.classList.add('mermaid-box'); pre.innerHTML = res.svg; }
+                    })
+                    .catch(function(){}));
+                });
+                Promise.all(jobs).then(function(){
+                  // SVG 替换改变了布局，重算标题坐标并刷新激活章节
+                  if(window.__recomputeHeads){ window.__recomputeHeads(); }
+                  if(window.__onScroll){ window.__onScroll(); }
+                });
+              } catch(e) {}
+            })();
+            // KaTeX/Mermaid 渲染（改变布局）完成后才缓存标题列表与文档坐标，供 __onScroll 零布局查询使用
             window.__heads = Array.prototype.slice.call(heads);
             if(window.__recomputeHeads){ window.__recomputeHeads(); }
             window.__outline = outline;
