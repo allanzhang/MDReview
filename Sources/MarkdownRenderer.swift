@@ -95,7 +95,10 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// 基于 WKWebView 原生 createPDF（macOS 11+，completionHandler 版本经 continuation 包装），无额外依赖。
     func exportPDF(to url: URL) async throws {
         guard pageLoaded else { throw ExportError.pageNotLoaded }
-        // 分块懒渲染模式下先强制渲染全文，确保 PDF 完整（evaluateJavaScript 会等待 Promise resolve）
+        // 分块懒渲染模式下先强制渲染全文，确保 PDF 完整。
+        // 注意：__renderAll 必须【同步返回】（不能返回 Promise）——macOS 上
+        // evaluateJavaScript 不等待 Promise，会把 Promise 对象当返回值 →
+        // "JavaScript execution returned a result of an unsupported type"
         try await evaluateJS("(window.__renderAll ? window.__renderAll() : true)")
         let config = WKPDFConfiguration()
         let data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
@@ -154,9 +157,12 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
 
     /// 把 Swift 字符串安全转成 JS 字符串字面量（正确转义引号/反斜杠/换行）。
     /// JSON 顶层只接受 array/dictionary，故先包成数组序列化，再去掉首尾方括号。
+    /// 额外转义 `</script>` → `<\/script>`：文档内容内联进 <script> 标签时，
+    /// 若含该序列会提前闭合脚本标签破坏整个页面（导出 HTML/阅读均受影响）。
     private static func jsonString(for s: String) -> String {
         let data = try! JSONSerialization.data(withJSONObject: [s])
-        let raw = String(data: data, encoding: .utf8) ?? "[]"
+        var raw = String(data: data, encoding: .utf8) ?? "[]"
+        raw = raw.replacingOccurrences(of: "</script>", with: "<\\/script>")
         return String(raw.dropFirst().dropLast())
     }
 
@@ -524,7 +530,7 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             if(!window.__chunked){
               // —— 全量渲染（小文档 / 导出） ——
               window.__sections = null;
-              window.__renderAll = function(){ return Promise.resolve(true); };
+              window.__renderAll = function(){ return true; };
               var content = document.getElementById('content');
               window.__mdit.renderSection({text: src, startSeq: 0}, content, false);
               window.__heads = Array.prototype.slice.call(content.querySelectorAll('h1,h2,h3,h4,h5,h6'));
@@ -568,7 +574,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
                 window.__renderedUpTo = end;
                 recomputeAll();
                 window.__renderMermaid();
-                return Promise.resolve(true);
+                // 同步返回（不能返回 Promise，见 exportPDF 注释）
+                return true;
               };
               window.__renderBatch(6);
               if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.outline){
