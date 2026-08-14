@@ -19,7 +19,8 @@ struct ContentView: View {
             detailContent
         }
         .navigationSplitViewStyle(.balanced)
-        .onChange(of: doc.url) { _, _ in DispatchQueue.main.async { renderCurrent() } }
+        // 打开文档与外部编辑热更新都会更新 rawText，统一由此触发渲染（url 变化必伴随 rawText 变化）
+        .onChange(of: doc.rawText) { _, _ in DispatchQueue.main.async { renderCurrent() } }
         .onAppear { DispatchQueue.main.async { renderCurrent() } }
     }
 
@@ -124,7 +125,7 @@ struct ContentView: View {
         renderer.searchCount = 0
         renderer.searchCurrent = 0
         searchText = ""
-        renderer.render(doc.rawText, baseURL: url.deletingLastPathComponent())
+        renderer.render(doc.rawText, baseURL: url.deletingLastPathComponent(), docName: url.lastPathComponent)
     }
 
     private func openPanel() {
@@ -167,7 +168,8 @@ struct ContentView: View {
         panel.directoryURL = url.deletingLastPathComponent()
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         do {
-            let html = MarkdownRenderer.htmlTemplate(markdown: doc.rawText)
+            // 导出 HTML：full 模式强制全量渲染，保证备份完整（不启用分块懒渲染）
+            let html = MarkdownRenderer.htmlTemplate(markdown: doc.rawText, chunkMode: "full")
             try html.write(to: dest, atomically: true, encoding: .utf8)
         } catch {
             presentExportError(error)

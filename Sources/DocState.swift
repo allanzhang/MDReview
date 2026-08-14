@@ -17,6 +17,9 @@ import SwiftUI
 
     private let recentKey = "mdreview.recent"
     private let recentMax = 30
+    /// 当前文件系统监听（外部编辑器保存后自动重载，AI 工作流刚需）。
+    private var fileMonitor: DispatchSourceFileSystemObject?
+    private var reloadWorkItem: DispatchWorkItem?
 
     init() {
         loadRecent()
@@ -25,6 +28,7 @@ import SwiftUI
     func open(_ url: URL) {
         guard url.pathExtension.lowercased() == "md" ||
               url.pathExtension.lowercased() == "markdown" else { return }
+        startMonitoring(url)
         do {
             let text = try String(contentsOf: url, encoding: .utf8)
             self.rawText = text
@@ -36,6 +40,51 @@ import SwiftUI
         } catch {
             self.rawText = "// Cannot read file:\n\(error.localizedDescription)"
             self.url = url
+        }
+    }
+
+    /// 建立对当前文件的磁盘监听（.write/.delete/.rename），外部保存后防抖重载。
+    private func startMonitoring(_ url: URL) {
+        fileMonitor?.cancel()
+        fileMonitor = nil
+        let fd = Darwin.open(url.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .delete, .rename],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            Task { @MainActor in self?.scheduleReload() }
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        fileMonitor = source
+    }
+
+    /// 防抖：外部编辑器可能连续写入，400ms 内合并为一次重载。
+    private func scheduleReload() {
+        reloadWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            Task { @MainActor in self?.reloadFromDisk() }
+        }
+        reloadWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: item)
+    }
+
+    private func reloadFromDisk() {
+        guard let url else { return }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            // 文件被删除/重命名：停止监听，避免持续报错
+            fileMonitor?.cancel()
+            fileMonitor = nil
+            return
+        }
+        do {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            if text != rawText { rawText = text }
+        } catch {
+            // 读取失败（编辑器可能正在写入中途）：忽略，等下一次事件
         }
     }
 

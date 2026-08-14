@@ -57,9 +57,10 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     }
 
     /// 用内联了 markdown 的 HTML 重新加载页面。baseURL 设为 .md 所在目录，使相对图片路径可解析。
-    func render(_ markdown: String, baseURL: URL?) {
+    /// docName 为文件名，用于阅读进度记忆（localStorage key 区分不同文档）。
+    func render(_ markdown: String, baseURL: URL?, docName: String? = nil) {
         pageLoaded = false
-        webView.loadHTMLString(Self.htmlTemplate(markdown: markdown), baseURL: baseURL)
+        webView.loadHTMLString(Self.htmlTemplate(markdown: markdown, docName: docName, chunkMode: "auto"), baseURL: baseURL)
     }
 
     /// 页面导航完成后回调：兜底再读一次 window.__outline，确保大纲一定能拿到。
@@ -87,6 +88,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// 基于 WKWebView 原生 createPDF（macOS 11+，completionHandler 版本经 continuation 包装），无额外依赖。
     func exportPDF(to url: URL) async throws {
         guard pageLoaded else { throw ExportError.pageNotLoaded }
+        // 分块懒渲染模式下先强制渲染全文，确保 PDF 完整（evaluateJavaScript 会等待 Promise resolve）
+        try await evaluateJS("(window.__renderAll ? window.__renderAll() : true)")
         let config = WKPDFConfiguration()
         let data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
             webView.createPDF(configuration: config) { result in
@@ -99,6 +102,19 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             }
         }
         try data.write(to: url, options: .atomic)
+    }
+
+    /// evaluateJavaScript 的 async 包装（completionHandler → continuation，仅关心执行完成）。
+    private func evaluateJS(_ script: String) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            webView.evaluateJavaScript(script) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
     }
 
     func search(_ term: String) {
@@ -177,14 +193,16 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
     /// markdown 内容直接内联，页面加载即完成渲染并回传大纲，单次导航更稳健。
     /// internal：导出 HTML 也复用同一模板（自包含、离线可开）。
     /// mermaid 按需：仅当 markdown 含 ```mermaid 代码块才内联约 3.5MB 渲染库，普通文档零负担。
-    static func htmlTemplate(markdown: String) -> String {
+    /// chunkMode：阅读传 "auto"（大文档自动分块懒渲染），导出传 "full"（强制全量保证备份完整）。
+    static func htmlTemplate(markdown: String, docName: String? = nil, chunkMode: String = "auto") -> String {
         let mdJSON = jsonString(for: markdown)
-        // 页面加载时立即渲染并回传大纲
-        let renderScript = "<script>\(jsRenderInline(mdJSON: mdJSON))</script>"
+        let renderScript = "<script>\(jsRenderInline(mdJSON: mdJSON, chunkMode: chunkMode))</script>"
+        // 注入文件名供阅读进度记忆使用（localStorage key 区分不同文档）
+        let docNameScript = "<script>window.__docName = \(jsonString(for: docName ?? ""));</script>"
         let mermaidScript = markdown.contains("```mermaid") ? "<script>\(bundled.mermaid)</script>" : ""
 
         return """
-        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(headHTML)\(scriptsHTML)\(mermaidScript)</head>
+        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(headHTML)\(scriptsHTML)\(docNameScript)\(mermaidScript)</head>
         <body><article id="content"></article>\(renderScript)</body></html>
         """
     }
@@ -276,91 +294,219 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
           if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.active){
             window.webkit.messageHandlers.active.postMessage(active);
           }
+          // 阅读进度记忆（localStorage，key 含文件名；受限环境失败静默）
+          if(window.__docName){
+            try { window.localStorage.setItem('mdreview.prog.' + window.__docName, active); } catch(e){}
+          }
         }
       }
     };
-    window.addEventListener('scroll', function(){ window.requestAnimationFrame(window.__onScroll); }, {passive:true});
+    // 大文档分块懒渲染：滚动接近已渲染区底部时加载下一批
+    window.__maybeLoadMore = function(){
+      if(!window.__sections || window.__renderedUpTo >= window.__sections.length - 1){ return; }
+      var content = document.getElementById('content');
+      var last = content.lastElementChild;
+      if(!last){ return; }
+      if(last.getBoundingClientRect().bottom < window.innerHeight * 2.5){ window.__renderBatch(4); }
+    };
+    // 恢复上次阅读位置（按章节 id；分块模式下目标未渲染则先渲染到该段）
+    window.__restoreProgress = function(){
+      if(!window.__docName){ return; }
+      var saved = null;
+      try { saved = window.localStorage.getItem('mdreview.prog.' + window.__docName); } catch(e){}
+      if(!saved){ return; }
+      var e = document.getElementById(saved);
+      if(!e && window.__sections){
+        var n = parseInt(String(saved).replace(/^h-/,''), 10);
+        if(!isNaN(n)){
+          for (var i = 0; i < window.__sections.length; i++){
+            if(window.__sections[i].startSeq >= 0 && window.__sections[i].startSeq <= n){
+              window.__renderUpToSection(i);
+            } else { break; }
+          }
+          e = document.getElementById(saved);
+        }
+      }
+      if(e){ e.scrollIntoView({block:'start'}); window.__onScroll && window.__onScroll(); }
+    };
+    window.addEventListener('scroll', function(){
+      window.requestAnimationFrame(function(){
+        window.__onScroll && window.__onScroll();
+        window.__maybeLoadMore && window.__maybeLoadMore();
+      });
+    }, {passive:true});
     // 图片等资源异步加载会改变布局，load 后重算标题坐标缓存
     window.addEventListener('load', window.__recomputeHeads);
     """#
 
     /// 页面加载时执行的渲染 + 大纲回传 IIFE。mdJSON 已是合法 JS 字符串字面量，直接内联。
-    private static func jsRenderInline(mdJSON: String) -> String {
+    /// chunkMode: "auto"（阅读模式，>25 万字符自动分块懒渲染）/ "full"（导出等全量场景）。
+    private static func jsRenderInline(mdJSON: String, chunkMode: String) -> String {
         #"""
         (function(){
           try {
             window.__mdit = window.markdownit({html:true, linkify:true, typographer:true, breaks:true});
             if(window.markdownitFootnote){ try { window.__mdit.use(window.markdownitFootnote); } catch(e){} }
-            // MD 语法扩展：emoji 短码 / ==高亮== / ~下标~ / ^上标^ / 定义列表（md-plugins.min.js 打包暴露）
             if(window.mdPlugins){
               try {
-                if(window.mdPlugins.emoji){ window.__mdit.use(window.mdPlugins.emoji); }
-                if(window.mdPlugins.mark){ window.__mdit.use(window.mdPlugins.mark); }
-                if(window.mdPlugins.sub){ window.__mdit.use(window.mdPlugins.sub); }
-                if(window.mdPlugins.sup){ window.__mdit.use(window.mdPlugins.sup); }
-                if(window.mdPlugins.deflist){ window.__mdit.use(window.mdPlugins.deflist); }
+                var P = window.mdPlugins;
+                if(P.emoji){ window.__mdit.use(P.emoji); }
+                if(P.mark){ window.__mdit.use(P.mark); }
+                if(P.sub){ window.__mdit.use(P.sub); }
+                if(P.sup){ window.__mdit.use(P.sup); }
+                if(P.deflist){ window.__mdit.use(P.deflist); }
               } catch(e){}
             }
             var src = \#(mdJSON);
-            var html = window.__mdit.render(src);
-            html = html.replace(/<li>\s*\[ \]\s+/g, '<li class="task"><input type="checkbox" disabled> ')
-                       .replace(/<li>\s*\[x\]\s+/g, '<li class="task"><input type="checkbox" disabled checked> ');
-            var el = document.getElementById('content');
-            el.innerHTML = html;
-            if(window.hljs){ try { document.querySelectorAll('#content pre code').forEach(function(b){ window.hljs.highlightElement(b); }); } catch(e){} }
-            var heads = el.querySelectorAll('h1,h2,h3,h4,h5,h6');
-            var outline = [];
-            heads.forEach(function(h, i){
-              if(!h.id){ h.id = 'h-' + i; }
-              outline.push({level: parseInt(h.tagName.substring(1)), text: h.textContent, id: h.id});
-            });
-            // 标题锚点链接（hover 显示 #）。放在 outline 收集之后注入，避免污染大纲文本
-            heads.forEach(function(h){
-              var anc = document.createElement('a');
-              anc.className = 'header-anchor';
-              anc.href = '#' + h.id;
-              anc.setAttribute('aria-hidden', 'true');
-              anc.textContent = '#';
-              h.insertBefore(anc, h.firstChild);
-            });
-            if(window.renderMathInElement){ try { renderMathInElement(el, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false}); } catch(e){} }
-            // Mermaid 按需渲染：仅当库已内联（文档含 mermaid 代码块）且存在代码块时执行。
-            // 取舍原则：语法错误/渲染异常一律 catch 保留原代码块（降级展示），绝不让图表问题阻塞阅读。
-            (function(){
+            var chunkMode = '\#(chunkMode)';
+
+            // —— 扫描大纲 + 按标题切分（跳过代码围栏），全量/分块两模式共用 ——
+            function scanAndSplit(text){
+              var lines = text.split('\n');
+              var outline = []; var sections = []; var cur = []; var inFence = false;
+              var seq = 0; var pendingSeq = -1;
+              function flush(){ if(cur.length){ sections.push({text: cur.join('\n'), startSeq: pendingSeq}); cur = []; } }
+              for (var i = 0; i < lines.length; i++){
+                var ln = lines[i];
+                if(/^\s*```/.test(ln)){ inFence = !inFence; }
+                if(!inFence){
+                  var m = /^(#{1,6})\s+(.+)$/.exec(ln);
+                  if(m){
+                    flush();
+                    outline.push({level: m[1].length, text: m[2], id: 'h-' + seq});
+                    pendingSeq = seq; seq++;
+                  }
+                }
+                cur.push(ln);
+              }
+              flush();
+              return {outline: outline, sections: sections};
+            }
+            function injectAnchor(h){
+              var a = document.createElement('a');
+              a.className = 'header-anchor'; a.href = '#' + h.id;
+              a.setAttribute('aria-hidden', 'true'); a.textContent = '#';
+              h.insertBefore(a, h.firstChild);
+            }
+            // 段渲染 + 后处理：标题 id/锚点、图片懒加载、KaTeX、代码高亮（分帧）
+            window.__mdit.renderSection = function(section, container, syncHighlight){
+              var html = window.__mdit.render(section.text);
+              html = html.replace(/<li>\s*\[ \]\s+/g, '<li class="task"><input type="checkbox" disabled> ')
+                         .replace(/<li>\s*\[x\]\s+/g, '<li class="task"><input type="checkbox" disabled checked> ');
+              container.innerHTML = html;
+              var hs = container.querySelectorAll('h1,h2,h3,h4,h5,h6');
+              for (var k = 0; k < hs.length; k++){
+                if(section.startSeq >= 0){ hs[k].id = 'h-' + (section.startSeq + k); }
+                injectAnchor(hs[k]);
+              }
+              container.querySelectorAll('img').forEach(function(im){ im.loading = 'lazy'; im.decoding = 'async'; });
+              if(window.renderMathInElement){ try { renderMathInElement(container, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false}); } catch(e){} }
+              var codes = Array.prototype.slice.call(container.querySelectorAll('pre code'));
+              if(!window.hljs){ return; }
+              if(syncHighlight || codes.length <= 12){
+                codes.forEach(function(b){ try { window.hljs.highlightElement(b); } catch(e){} });
+              } else {
+                window.__highlightQueue = (window.__highlightQueue || []).concat(codes);
+                if(!window.__highlighting){
+                  window.__highlighting = true;
+                  (function drain(){
+                    var batch = window.__highlightQueue.splice(0, 8);
+                    batch.forEach(function(b){ try { window.hljs.highlightElement(b); } catch(e){} });
+                    if(window.__highlightQueue.length){ window.requestAnimationFrame(drain); }
+                    else { window.__highlighting = false; }
+                  })();
+                }
+              }
+            };
+            function recomputeAll(){ if(window.__recomputeHeads){ window.__recomputeHeads(); } if(window.__onScroll){ window.__onScroll(); } }
+            // Mermaid：按需渲染，语法错误/异常一律保留原代码块（取舍原则）
+            window.__renderMermaid = function(){
               var mmdEls = document.querySelectorAll('#content pre code.language-mermaid');
               if(!window.mermaid || !mmdEls.length){ return; }
               try {
-                window.mermaid.initialize({
-                  startOnLoad: false,
-                  securityLevel: 'strict',
-                  theme: (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'default',
-                  fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif'
-                });
+                if(!window.__mermaidInit){
+                  window.mermaid.initialize({
+                    startOnLoad: false, securityLevel: 'strict',
+                    theme: (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'default',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif'
+                  });
+                  window.__mermaidInit = true;
+                }
                 var jobs = [];
                 Array.prototype.forEach.call(mmdEls, function(codeEl){
                   codeEl.classList.remove('hljs');
                   jobs.push(window.mermaid.render('mmd-' + (window.__mmdId = (window.__mmdId||0) + 1), codeEl.textContent)
-                    .then(function(res){
-                      var pre = codeEl.closest('pre');
-                      if(pre){ pre.classList.add('mermaid-box'); pre.innerHTML = res.svg; }
-                    })
+                    .then(function(res){ var pre = codeEl.closest('pre'); if(pre){ pre.classList.add('mermaid-box'); pre.innerHTML = res.svg; } })
                     .catch(function(){}));
                 });
-                Promise.all(jobs).then(function(){
-                  // SVG 替换改变了布局，重算标题坐标并刷新激活章节
-                  if(window.__recomputeHeads){ window.__recomputeHeads(); }
-                  if(window.__onScroll){ window.__onScroll(); }
-                });
-              } catch(e) {}
-            })();
-            // KaTeX/Mermaid 渲染（改变布局）完成后才缓存标题列表与文档坐标，供 __onScroll 零布局查询使用
-            window.__heads = Array.prototype.slice.call(heads);
-            if(window.__recomputeHeads){ window.__recomputeHeads(); }
-            window.__outline = outline;
-            if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.outline){
-              window.webkit.messageHandlers.outline.postMessage(outline);
+                Promise.all(jobs).then(function(){ recomputeAll(); });
+              } catch(e){}
+            };
+            // 分块模式下增量收集已渲染标题（未渲染的没有 DOM，不参与坐标缓存）
+            function appendHeads(container){
+              if(!window.__heads){ window.__heads = []; }
+              Array.prototype.push.apply(window.__heads, Array.prototype.slice.call(container.querySelectorAll('h1,h2,h3,h4,h5,h6')));
             }
-            if(window.__onScroll){ window.__onScroll(); }
+
+            var scan = scanAndSplit(src);
+            window.__outline = scan.outline;
+            window.__chunked = (chunkMode === 'auto') ? (src.length > 250000) : false;
+
+            if(!window.__chunked){
+              // —— 全量渲染（小文档 / 导出） ——
+              window.__sections = null;
+              window.__renderAll = function(){ return Promise.resolve(true); };
+              var content = document.getElementById('content');
+              window.__mdit.renderSection({text: src, startSeq: 0}, content, false);
+              window.__heads = Array.prototype.slice.call(content.querySelectorAll('h1,h2,h3,h4,h5,h6'));
+              if(window.__recomputeHeads){ window.__recomputeHeads(); }
+              if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.outline){
+                window.webkit.messageHandlers.outline.postMessage(window.__outline);
+              }
+              window.__onScroll && window.__onScroll();
+              window.__renderMermaid();
+              window.__restoreProgress && window.__restoreProgress();
+            } else {
+              // —— 分块懒渲染（大文档）：初始 6 段，滚动渐进加载 ——
+              window.__sections = scan.sections;
+              window.__renderedUpTo = -1;
+              window.__renderBatch = function(count){
+                var end = Math.min(window.__renderedUpTo + count, window.__sections.length - 1);
+                for (var i = window.__renderedUpTo + 1; i <= end; i++){
+                  var div = document.createElement('div');
+                  div.className = 'md-section';
+                  window.__mdit.renderSection(window.__sections[i], div, false);
+                  document.getElementById('content').appendChild(div);
+                  appendHeads(div);
+                }
+                window.__renderedUpTo = end;
+                recomputeAll();
+                window.__renderMermaid();
+                window.__maybeLoadMore && window.__maybeLoadMore();
+              };
+              window.__renderUpToSection = function(i){
+                if(i > window.__renderedUpTo){ window.__renderBatch(i - window.__renderedUpTo); }
+              };
+              window.__renderAll = function(){
+                var end = window.__sections.length - 1;
+                for (var i = window.__renderedUpTo + 1; i <= end; i++){
+                  var div = document.createElement('div');
+                  div.className = 'md-section';
+                  window.__mdit.renderSection(window.__sections[i], div, true);
+                  document.getElementById('content').appendChild(div);
+                  appendHeads(div);
+                }
+                window.__renderedUpTo = end;
+                recomputeAll();
+                window.__renderMermaid();
+                return Promise.resolve(true);
+              };
+              window.__renderBatch(6);
+              if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.outline){
+                window.webkit.messageHandlers.outline.postMessage(window.__outline);
+              }
+              window.__restoreProgress && window.__restoreProgress();
+            }
           } catch(err) {
             if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.outline){
               window.webkit.messageHandlers.outline.postMessage([]);
