@@ -64,7 +64,9 @@ body {
 #content img { max-width: 100%; border-radius: 8px; }
 #content hr { border: none; border-top: 1px solid #eaecef; margin: 2em 0; }
 #content ul li.task { list-style: none; margin-left: -1.2em; }
-#content ul li.task input { margin-right: 0.5em; }
+#content ul li.task input { margin-right: 0.5em; vertical-align: -1px; cursor: pointer; }
+#content ul li.task.done { color: #8b949e; text-decoration: line-through; }
+#content s, #content del { text-decoration: line-through; }
 mark.srch { background: #fff3a0; color: inherit; border-radius: 2px; padding: 0 1px; }
 mark.srch-cur { background: #ffb703; color: #1f2328; }
 
@@ -89,6 +91,7 @@ body.theme-dark #content blockquote { border-color: #30363d; color: #8b949e; }
 body.theme-dark #content th, body.theme-dark #content td { border-color: #30363d; }
 body.theme-dark #content th { background: #161b22; }
 body.theme-dark #content hr { border-color: #30363d; }
+body.theme-dark #content ul li.task.done { color: #6e7681; }
 body.theme-dark #content .footnotes { color: #8b949e; }
 body.theme-dark #content .footnotes-sep { border-color: #21262d; }
 body.theme-dark mark.srch { background: #9e7b00; color: #fff; }

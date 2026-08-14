@@ -498,10 +498,68 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
                 var P = window.mdPlugins;
                 if(P.emoji){ window.__mdit.use(P.emoji); }
                 if(P.mark){ window.__mdit.use(P.mark); }
-                if(P.sub){ window.__mdit.use(P.sub); }
+                // 不启用 md-plugins 的 sub（单波浪线 ~x~ 一律当下标）：单波浪线需要按内容
+                // 区分下标（H~2~O 数字）与删除线（~文字~，Typora 习惯），见下方自定义 tilde 规则。
                 if(P.sup){ window.__mdit.use(P.sup); }
                 if(P.deflist){ window.__mdit.use(P.deflist); }
               } catch(e){}
+            }
+            // —— 数学公式（$...$ / $$...$$）：在 markdown-it 其他行内规则前拦截，避免
+            // breaks 的 <br> 切段、反斜杠转义（\,→,）、强调（*_）等破坏公式源码；
+            // 直接用 KaTeX 渲染成 HTML。规则放在 strikethrough 之前（backticks 之后），
+            // 行内代码里的 $ 已被 backticks 规则消费，不会误伤。
+            window.__mdit.inline.ruler.before('strikethrough', 'math', function(state, silent){
+              var start = state.pos;
+              if (state.src.charCodeAt(start) !== 0x24) { return false; }       // '$'
+              var isDisp = state.src.charCodeAt(start + 1) === 0x24;
+              var openLen = isDisp ? 2 : 1;
+              var closeStr = isDisp ? '$$' : '$';
+              var end = state.src.indexOf(closeStr, start + openLen);
+              if (end < 0) { return false; }
+              var raw = state.src.slice(start + openLen, end);
+              if (isDisp) {
+                if (!raw.replace(/\s/g, '')) { return false; }                  // 空公式不处理
+              } else {
+                if (raw.indexOf('\n') >= 0) { return false; }
+                if (!raw.trim() || raw !== raw.trim()) { return false; }        // 首尾空白不算公式（$5 and $10 之类）
+              }
+              if (silent) { return true; }
+              var html;
+              try { html = window.katex.renderToString(raw.trim(), {displayMode: isDisp, throwOnError: false}); }
+              catch(e) { return false; }
+              var token = state.push('html_inline', '', 0);
+              token.content = html;
+              state.pos = end + closeStr.length;
+              return true;
+            });
+            // —— 单波浪线：数字→下标（H~2~O），非数字→删除线（~文字~，Typora 习惯）。
+            // 双波浪线 ~~...~~ 由 markdown-it 内置 strikethrough 处理（本规则空内容不匹配）。
+            window.__mdit.inline.ruler.before('emphasis', 'tilde', function(state, silent){
+              var start = state.pos;
+              if (state.src.charCodeAt(start) !== 0x7E) { return false; }       // '~'
+              var end = state.src.indexOf('~', start + 1);
+              if (end < 0) { return false; }
+              var content = state.src.slice(start + 1, end);
+              if (!content || content.indexOf('\n') >= 0) { return false; }
+              if (content !== content.trim()) { return false; }
+              if (silent) { return true; }
+              var tag = /^[0-9]+(?:[.,][0-9]+)?$/.test(content) ? 'sub' : 's';
+              var o = state.push(tag + '_open', tag, 1); o.markup = '~';
+              var t = state.push('text', '', 0); t.content = content;
+              var c = state.push(tag + '_close', tag, -1); c.markup = '~';
+              state.pos = end + 1;
+              return true;
+            });
+            // 任务复选框：可点选；勾选后整行删除线+变淡（GitHub 风格，仅 UI 层、不回写源文件）。
+            var contentEl = document.getElementById('content');
+            if (contentEl) {
+              contentEl.addEventListener('click', function(e){
+                var t = e.target;
+                if (t && t.matches && t.matches('li.task input[type="checkbox"]')){
+                  var li = t.closest('li');
+                  if (li){ li.classList.toggle('done', t.checked); }
+                }
+              });
             }
             var src = \#(mdJSON);
             var chunkMode = '\#(chunkMode)';
@@ -544,8 +602,8 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
             // 段渲染 + 后处理：标题 id/锚点、图片懒加载、KaTeX、代码高亮（分帧）
             window.__mdit.renderSection = function(section, container, syncHighlight){
               var html = window.__mdit.render(section.text);
-              html = html.replace(/<li>\s*\[ \]\s+/g, '<li class="task"><input type="checkbox" disabled> ')
-                         .replace(/<li>\s*\[x\]\s+/g, '<li class="task"><input type="checkbox" disabled checked> ');
+              html = html.replace(/<li>\s*\[ \]\s+/g, '<li class="task"><input type="checkbox"> ')
+                         .replace(/<li>\s*\[[xX]\]\s+/g, '<li class="task done"><input type="checkbox" checked> ');
               container.innerHTML = html;
               var hs = container.querySelectorAll('h1,h2,h3,h4,h5,h6');
               for (var k = 0; k < hs.length; k++){
@@ -553,7 +611,6 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
                 injectAnchor(hs[k]);
               }
               container.querySelectorAll('img').forEach(function(im){ im.loading = 'lazy'; im.decoding = 'async'; });
-              if(window.renderMathInElement){ try { renderMathInElement(container, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError:false}); } catch(e){} }
               var codes = Array.prototype.slice.call(container.querySelectorAll('pre code'));
               if(!window.hljs){ return; }
               if(syncHighlight || codes.length <= 12){
