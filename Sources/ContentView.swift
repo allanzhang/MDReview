@@ -582,6 +582,11 @@ struct SearchBar: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+            } else if !text.isEmpty {
+                // 无匹配时明确提示 0 结果
+                Text("0 results")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             // 箭头按钮：label 撑大固定 frame + contentShape，26x26 可点区域（图标居中）。
             Button { renderer.searchPrev() } label: {
