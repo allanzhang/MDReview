@@ -79,9 +79,10 @@ import SwiftUI
     }
 
     /// 面板定位与尺寸（全部【屏幕坐标】）：
-    /// - 高度 = 工具栏区域总高 − 12（上下各留 6pt 悬空，不贴顶）
+    /// - 高度 = 工具栏按钮区域行高（chromeH，与按钮背景区域完全一致）
     /// - 宽度 = Open/Search 按钮水平距离的 50%（下限 220）
-    /// - 水平居中于两按钮中点；垂直居中于工具栏条（留白悬空）
+    /// - 水平居中于两按钮中点；垂直 = 覆盖整个按钮区域行（顶对齐窗口顶，
+    ///   视觉上融入 toolbar 区域，不再悬空分裂）
     /// 按钮识别：toolTip（.help 设置）与 label 都查——SwiftUI toolbar item 的 label 常为空。
     private func position(_ panel: NSPanel, relativeTo window: NSWindow) {
         var openFrame: NSRect?
@@ -101,8 +102,9 @@ import SwiftUI
             }
         }
 
+        // 按钮区域行高：窗口顶部 chrome 总高
         let chromeH = max(32, window.frame.height - window.contentLayoutRect.height)
-        let height = chromeH - 12
+        let height = chromeH
         let width: CGFloat
         let x: CGFloat
         let y: CGFloat
@@ -116,8 +118,8 @@ import SwiftUI
             width = max(220, min(wf.width * 0.4, 520))
             x = wf.midX - width / 2
         }
-        // 垂直：工具栏条内居中，上下各留 (chromeH - height)/2 = 6pt
-        y = window.frame.maxY - chromeH + (chromeH - height) / 2
+        // 垂直：面板顶 = 窗口顶，覆盖整个按钮区域行（与按钮区域完全同高同区）
+        y = window.frame.maxY - chromeH
 
         // 尺寸缓存：拖动/缩放时尺寸不变则跳过 setContentSize（避免反复布局卡顿）
         let size = NSSize(width: width, height: height)

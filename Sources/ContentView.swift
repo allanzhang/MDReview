@@ -428,6 +428,25 @@ struct SourceTextView: NSViewRepresentable {
     }
 }
 
+/// 系统级高斯模糊背景：NSVisualEffectView 包装。material 可选（popover=强模糊浅色、
+/// hudWindow=Spotlight 级深色），state active + behindWindow 模糊面板背后的窗口内容，
+/// 比 SwiftUI material 模糊更彻底，适合浮动卡片/搜索框。
+struct VisualEffectBackground: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .popover
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView()
+        v.material = material
+        v.blendingMode = .behindWindow
+        v.state = .active
+        return v
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+    }
+}
+
 /// 搜索框：Spotlight 式悬浮卡片——点击搜索按钮呼出，横向居中于内容区顶部（标题区域）。
 /// 玻璃材质 + 悬浮阴影 + 细描边，大字号输入；仅观察 renderer 的 searchCount/searchCurrent。
 struct SearchBar: View {
@@ -471,17 +490,13 @@ struct SearchBar: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background {
-            // 层次感：light 下用偏实底色 + 深描边（毛玻璃太透导致边界模糊）；
-            // dark 下保持 ultraThinMaterial 毛玻璃（透明浮动面板里 glassEffect 会黑底）
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(scheme == .dark
-                      ? AnyShapeStyle(.ultraThinMaterial)
-                      : AnyShapeStyle(Color(nsColor: .windowBackgroundColor).opacity(0.62)))
-        }
+        // 完全高斯模糊：NSVisualEffectView（popover 材质，系统级高强度模糊），
+        // 比 SwiftUI material 更彻底——呼出后搜索框与背后内容明显分离
+        .background(VisualEffectBackground(material: .popover))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(scheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.14), lineWidth: 1)
+                .stroke(scheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.16), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.25), radius: 22, y: 10)
     }
