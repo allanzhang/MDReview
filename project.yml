@@ -11,6 +11,7 @@ targets:
       - path: Sources
         excludes:
           - Info.plist
+          - icon raw.png
     info:
       path: Sources/Info.plist
       properties:
@@ -37,6 +38,7 @@ targets:
         CODE_SIGN_IDENTITY: "-"
         ENABLE_HARDENED_RUNTIME: true
         ENABLE_PREVIEWS: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 schemes:
   MDReview:
     build:

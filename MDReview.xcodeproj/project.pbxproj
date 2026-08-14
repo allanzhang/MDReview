@@ -37,6 +37,7 @@
 		B4BEC0CCFFB950799E6AA6F8 /* OutlineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17F20383DC2B6519F2125C2 /* OutlineView.swift */; };
 		BAC04F6A066C8F0BA0CA652F /* reader.css in Resources */ = {isa = PBXBuildFile; fileRef = B88D9F2419DB3ACA21C204E9 /* reader.css */; };
 		C3575DD0F9807EBCFE9874F4 /* KaTeX_Script-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = F39D2DFEEC8CDB5B1516F07D /* KaTeX_Script-Regular.woff2 */; };
+		CF21B82584F3DDC8E77281DA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3D628C539738A3D101AA4C34 /* Assets.xcassets */; };
 		D3F00781E836F53F852B1899 /* KaTeX_Math-Italic.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = CAACBADB0D9ACC1D73DB3A2F /* KaTeX_Math-Italic.woff2 */; };
 		D737AC09707DD33313BC274C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 511FFD4007D6E5EF956FCA69 /* ContentView.swift */; };
 		D74665F2EDA2388259B23B6E /* katex.min.css in Resources */ = {isa = PBXBuildFile; fileRef = 28EC663D01BA2F16CF21817C /* katex.min.css */; };
@@ -55,6 +56,7 @@
 		297FEE949C371F6AB57F52BB /* KaTeX_Typewriter-Regular.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Typewriter-Regular.woff2"; sourceTree = "<group>"; };
 		2CAF6CF3B6E11C0EBAA733DC /* katex-auto-render.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "katex-auto-render.min.js"; sourceTree = "<group>"; };
 		3D02FB9EFDE26A41ADCEBCD0 /* markdown-it-footnote.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "markdown-it-footnote.min.js"; sourceTree = "<group>"; };
+		3D628C539738A3D101AA4C34 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3EC7CBB60343263839F5D098 /* markdown-it.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "markdown-it.min.js"; sourceTree = "<group>"; };
 		4E5776CD166E7F65A5FE021D /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
 		511FFD4007D6E5EF956FCA69 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -122,6 +124,7 @@
 		52D298D07D993EE29452A354 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				3D628C539738A3D101AA4C34 /* Assets.xcassets */,
 				511FFD4007D6E5EF956FCA69 /* ContentView.swift */,
 				5F6F433AADE9F62B249F8A36 /* DocState.swift */,
 				4E5776CD166E7F65A5FE021D /* MarkdownRenderer.swift */,
@@ -234,6 +237,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CF21B82584F3DDC8E77281DA /* Assets.xcassets in Resources */,
 				8D679CBAB297B6E6763CB7AB /* KaTeX_AMS-Regular.woff2 in Resources */,
 				DCA86E5B7A1E1D70C44214B5 /* KaTeX_Caligraphic-Bold.woff2 in Resources */,
 				A9571C0C4129DC877400674B /* KaTeX_Caligraphic-Regular.woff2 in Resources */,
