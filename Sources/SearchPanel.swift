@@ -21,13 +21,15 @@ import SwiftUI
         }
         guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
 
-        let width: CGFloat = 520
-        let height: CGFloat = 54
+        let height: CGFloat = 58
         let bar = SearchBar(renderer: renderer, text: text, onClose: onClose)
         let host = NSHostingView(rootView: bar)
+        // 透明背景：面板透明，让 SwiftUI material 毛玻璃生效
+        host.wantsLayer = true
+        host.layer?.backgroundColor = NSColor.clear.cgColor
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -59,12 +61,42 @@ import SwiftUI
         observedWindow = nil
     }
 
-    /// 面板定位：水平居中于窗口、垂直贴窗口顶部（标题栏区域，略下移 6pt 悬空覆盖文件名/路径）。
+    /// 面板定位：水平居中对齐「Open」与「Search」按钮中点（按按钮 toolTip 匹配），
+    /// 宽度随窗口 55% 自适应（320-720）；匹配失败回退窗口顶部居中。
     private func position(_ panel: NSPanel, relativeTo window: NSWindow) {
-        let winFrame = window.frame
-        let size = panel.frame.size
-        let x = winFrame.midX - size.width / 2
-        let y = winFrame.maxY - size.height - 6
+        let width = max(320, min(window.frame.width * 0.55, 720))
+        let height = panel.frame.height
+        panel.setContentSize(NSSize(width: width, height: height))
+
+        var anchor: NSPoint?
+        if let toolbar = window.toolbar {
+            var openFrame: NSRect?
+            var searchFrame: NSRect?
+            for item in toolbar.items {
+                guard let view = item.view else { continue }
+                let tip = view.toolTip ?? ""
+                let r = view.convert(view.bounds, to: nil)   // 屏幕坐标（AppKit 左下原点）
+                if tip.contains("Open Markdown") {
+                    openFrame = r
+                } else if tip.contains("Search in Document") {
+                    searchFrame = r
+                }
+            }
+            if let o = openFrame, let s = searchFrame {
+                anchor = NSPoint(x: (o.midX + s.midX) / 2, y: (o.midY + s.midY) / 2)
+            }
+        }
+
+        let x: CGFloat
+        let y: CGFloat
+        if let anchor {
+            x = anchor.x - width / 2
+            y = anchor.y - height / 2
+        } else {
+            let wf = window.frame
+            x = wf.midX - width / 2
+            y = wf.maxY - height - 10
+        }
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 

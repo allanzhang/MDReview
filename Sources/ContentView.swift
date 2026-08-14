@@ -427,20 +427,18 @@ struct SearchBar: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .background {
-            if #available(macOS 26.0, *) {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            } else {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(.regularMaterial)
-            }
+            // 大圆角 + material 毛玻璃：在透明浮动面板里 glassEffect 会渲染成黑底，
+            // material 更可靠，模糊面板背后内容（Spotlight 观感）
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.regularMaterial)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.separator, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(.separator.opacity(0.4), lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.22), radius: 24, y: 10)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(color: .black.opacity(0.25), radius: 22, y: 10)
     }
 }
