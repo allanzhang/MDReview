@@ -114,6 +114,26 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
         try data.write(to: url, options: .atomic)
     }
 
+    /// 导出当前渲染结果为【静态 HTML 快照】：从 WebView 取已渲染的正文 DOM（含 KaTeX/高亮/Mermaid
+    /// 渲染结果），拼成无 JS 渲染依赖的页面——macOS 预览/QuickLook 与浏览器都能正常打开
+    /// （旧的 JS 渲染版 HTML 在 Preview 中空白，因为 Preview 不执行脚本）。
+    func exportHTML(to url: URL) async throws {
+        guard pageLoaded else { throw ExportError.pageNotLoaded }
+        // 1. 确保全文渲染（分块懒渲染模式下补全所有段）
+        try await evaluateJS("(window.__renderAll ? window.__renderAll() : true)")
+        // 2. 取渲染后的正文 HTML（String 是 evaluateJavaScript 支持返回类型）
+        let innerHTML = try await evaluateJSString("document.getElementById('content').innerHTML")
+        // 3. 组装静态页面：内联全部样式，仅留一行主题脚本（Preview 无 JS 时默认亮色，不影响内容）
+        let b = Self.bundled
+        let style = "<style>\(b.readerCSS)\n\(b.katexCSS)\n\(b.hljsLight)\n\(b.hljsDark)</style>"
+        let theme = "<script>try{var m=window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.style.colorScheme=m?'dark':'light';document.body.classList.toggle('theme-dark',m);}catch(e){}</script>"
+        let html = """
+        <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\(style)</head>
+        <body><article id="content">\(innerHTML)</article>\(theme)</body></html>
+        """
+        try html.write(to: url, atomically: true, encoding: .utf8)
+    }
+
     /// evaluateJavaScript 的 async 包装（completionHandler → continuation，仅关心执行完成）。
     private func evaluateJS(_ script: String) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -122,6 +142,21 @@ private func parseOutline(_ arr: [[String: Any]]) -> [Heading] {
                     continuation.resume(throwing: error)
                 } else {
                     continuation.resume()
+                }
+            }
+        }
+    }
+
+    /// evaluateJavaScript 的 async 包装，返回 String 结果（如 DOM innerHTML）。
+    private func evaluateJSString(_ script: String) async throws -> String {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            webView.evaluateJavaScript(script) { result, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let s = result as? String {
+                    continuation.resume(returning: s)
+                } else {
+                    continuation.resume(returning: "")
                 }
             }
         }

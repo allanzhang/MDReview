@@ -240,7 +240,7 @@ struct ContentView: View {
         return false
     }
 
-    /// 导出为自包含 HTML（内联全部渲染依赖，离线可开，与阅读效果一致）。
+    /// 导出为静态 HTML 快照（渲染后的 DOM + 内联样式，Preview/浏览器均可打开）。
     private func exportHTML() {
         guard let url = doc.url else { return }
         let panel = NSSavePanel()
@@ -248,12 +248,12 @@ struct ContentView: View {
         panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + ".html"
         panel.directoryURL = url.deletingLastPathComponent()
         guard panel.runModal() == .OK, let dest = panel.url else { return }
-        do {
-            // 导出 HTML：full 模式强制全量渲染保证备份完整；外观跟随打开者系统（不固化当前模式）
-            let html = MarkdownRenderer.htmlTemplate(markdown: doc.rawText, chunkMode: "full", appearance: .system)
-            try html.write(to: dest, atomically: true, encoding: .utf8)
-        } catch {
-            presentExportError(error)
+        Task {
+            do {
+                try await renderer.exportHTML(to: dest)
+            } catch {
+                await MainActor.run { presentExportError(error) }
+            }
         }
     }
 
