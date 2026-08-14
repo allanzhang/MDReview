@@ -85,15 +85,6 @@ struct ContentView: View {
             if doc.showSource && doc.url != nil {
                 SourceView(text: doc.rawText)
             }
-            if showSearch && doc.url != nil {
-                SearchBar(renderer: renderer,
-                          text: $searchText,
-                          onClose: {
-                              showSearch = false
-                              searchText = ""
-                              renderer.search("")
-                          })
-            }
         }
         .onChange(of: searchText) { _, newValue in
             // 防抖：连续输入不触发搜索，停顿 250ms 后执行一次（避免大文档全文遍历打满 WebContent）
@@ -127,6 +118,18 @@ struct ContentView: View {
         ToolbarItem(placement: .primaryAction) {
             Button { showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }
                 .help("Search in Document")
+        }
+        // 搜索框：呼出时占据工具栏 principal（标题）位置，玻璃卡片、宽度随窗口自适应
+        if showSearch && doc.url != nil {
+            ToolbarItem(placement: .principal) {
+                SearchBar(renderer: renderer,
+                          text: $searchText,
+                          onClose: {
+                              showSearch = false
+                              searchText = ""
+                              renderer.search("")
+                          })
+            }
         }
         // 外观切换：单按钮，太阳/月亮图标高亮代表当前状态。
         // System（默认）→ 点击临时覆盖为相反外观 → 再点回到 System（不持久化）
@@ -407,7 +410,7 @@ struct SearchBar: View {
                 .foregroundStyle(.secondary)
             TextField("Search", text: $text)
                 .textFieldStyle(.plain)
-                .frame(minWidth: 220)
+                .frame(minWidth: 200, maxWidth: 460)
                 .focused($isFocused)
                 .onAppear { isFocused = true }
             if renderer.searchCount > 0 {

@@ -43,9 +43,9 @@ private struct OutlineRow: View {
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 5)
-                // 左侧层级缩进 + 右侧留白：长标题在窄侧栏下不贴右边缘/滚动条
+                // 基础 10pt 左右留白 + 层级缩进：一级标题左侧也不贴边
+                .padding(.horizontal, 10)
                 .padding(.leading, indent)
-                .padding(.trailing, 12)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
