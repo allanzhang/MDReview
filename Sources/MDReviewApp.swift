@@ -114,6 +114,24 @@ struct WindowAppearanceModifier: ViewModifier {
         // 启用系统窗口 Tab：File 菜单出现 New Tab（⌘T），窗口可合并成 Tab、
         // 每个 Tab 是独立窗口（各自独立 DocState，见 WindowRoot）。
         NSWindow.allowsAutomaticWindowTabbing = true
+        // 关闭 Tab 后：若某个 Tab 组只剩一个窗口，把它移出组、恢复单视图
+        // （保证所有 Tab 可逐个关闭，关闭到最后一个时自然退出多 Tab 模式）。
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowDidClose(_:)),
+            name: NSWindow.willCloseNotification, object: nil
+        )
+    }
+
+    /// 关闭任意窗口/Tab 后：某个 Tab 组只剩一个窗口时，把该窗口移出 Tab 组并
+    /// 恢复跟随系统偏好（tabbingMode .automatic），标签栏随之消失、回到单视图。
+    @objc private func windowDidClose(_ note: Notification) {
+        DispatchQueue.main.async {
+            for w in NSApp.windows where w.isVisible {
+                guard let group = w.tabGroup, group.windows.count == 1 else { continue }
+                group.removeWindow(w)
+                w.tabbingMode = .automatic
+            }
+        }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
