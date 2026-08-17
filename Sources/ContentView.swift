@@ -519,10 +519,19 @@ private struct ReadingProgressBar: View {
 
     var body: some View {
         GeometryReader { geo in
-            Rectangle()
-                .fill(Color.accentColor)
-                .frame(width: geo.size.width * renderer.readingProgress, height: 2)
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.accentColor, Color.accentColor.opacity(0.55)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: max(0, geo.size.width * renderer.readingProgress), height: 3)
+                .shadow(color: Color.accentColor.opacity(0.25), radius: 2, y: 1)
+                .animation(.easeOut(duration: 0.12), value: renderer.readingProgress)
         }
+        .frame(height: 3)
         .allowsHitTesting(false)
     }
 }

@@ -235,6 +235,8 @@ final class MarkdownWebView: WKWebView {
         // 否则浏览器按导出文件所在目录解析相对路径 → 图片全部失效。
         // im.src（IDL 属性）返回的是相对路径经 baseURL 解析后的绝对 URL，直接取它。
         try await evaluateJS(#"(function(){var imgs=document.querySelectorAll('#content img');for(var i=0;i<imgs.length;i++){var im=imgs[i];var s=im.getAttribute('src')||'';if(s&&!/^(?:https?:|data:|file:|#|\/)/i.test(s)){try{im.setAttribute('src',im.src);}catch(e){}}}})();"#)
+        // 1.7 静态 HTML 无 JS 事件绑定，复制按钮会变成死控件，导出前移除
+        try await evaluateJS(#"(function(){var bs=document.querySelectorAll('#content .code-copy');for(var i=0;i<bs.length;i++){bs[i].remove();}})();"#)
         // 2. 取渲染后的正文 HTML（String 是 evaluateJavaScript 支持返回类型）
         let innerHTML = try await evaluateJSString("document.getElementById('content').innerHTML")
         // 3. 组装静态页面：内联全部样式，仅留一行主题脚本（Preview 无 JS 时默认亮色，不影响内容）
@@ -386,7 +388,7 @@ final class MarkdownWebView: WKWebView {
         let renderScript = "<script>\(jsRenderInline(mdJSON: mdJSON, chunkMode: chunkMode))</script>"
         // 正文基准字号跟随系统（body 文本样式，等比放大到阅读尺寸）；导出 HTML 无此变量时 CSS 回退 16px
         let bodySize = NSFont.preferredFont(forTextStyle: .body).pointSize
-        let baseSize = max(15.0, bodySize * 1.2)
+        let baseSize = max(14.5, bodySize * 1.1)
         let fontVar = "<style>:root { --md-base: \(String(format: "%.1f", baseSize))px; }</style>"
         // 注入文件名供阅读进度记忆使用（UserDefaults key 区分不同文档）
         let docNameScript = "<script>window.__docName = \(jsonString(for: docName ?? ""));</script>"
@@ -758,6 +760,24 @@ final class MarkdownWebView: WKWebView {
               state.pos = end + 1;
               return true;
             });
+            // —— **粗体** + CJK 全角标点边界：CommonMark 把「」等当作标点，
+            // 导致 **「...」** 无法开/闭强调；这里只对边界为 CJK 标点的情况
+            // 用 renderInline 重新解析内部内容并包 strong。
+            var cjkPunct = /[\u3000-\u303F\uFF01-\uFF5E\u2018\u2019\u201C\u201D\u3008-\u3011]/;
+            window.__mdit.inline.ruler.before('emphasis', 'cjk_bold', function(state, silent){
+              if (state.src.charCodeAt(state.pos) !== 0x2A || state.src.charCodeAt(state.pos + 1) !== 0x2A) { return false; }
+              var end = state.src.indexOf('**', state.pos + 2);
+              if (end < 0) { return false; }
+              var content = state.src.slice(state.pos + 2, end);
+              if (!content || content.indexOf('\n') >= 0 || content.indexOf('**') >= 0) { return false; }
+              if (!cjkPunct.test(content.charAt(0)) && !cjkPunct.test(content.charAt(content.length - 1))) { return false; }
+              if (silent) { return true; }
+              var html = state.md.renderInline(content);
+              var token = state.push('html_inline', '', 0);
+              token.content = '<strong>' + html + '</strong>';
+              state.pos = end + 2;
+              return true;
+            });
             var src = \#(mdJSON);
             var chunkMode = '\#(chunkMode)';
 
@@ -796,6 +816,62 @@ final class MarkdownWebView: WKWebView {
               a.setAttribute('aria-hidden', 'true'); a.textContent = '#';
               h.insertBefore(a, h.firstChild);
             }
+            // 代码块精致化：语言栏 + 行号栏 + 代码主体。
+            // 不拆高亮后的 DOM，而是把 gutter 与 code 并排放进 grid，避免破坏 hljs 结构。
+            window.__polishCodeBlocks = function(root){
+              var pres = root.querySelectorAll('pre');
+              for (var pi = 0; pi < pres.length; pi++){
+                var pre = pres[pi];
+                if (pre.dataset.polished || pre.classList.contains('mermaid-box')) { continue; }
+                let code = pre.querySelector('code');
+                if (!code || (code.className || '').indexOf('language-mermaid') >= 0) { continue; }
+                pre.classList.add('code-block');
+                var langMatch = /(?:^|\s)language-([\w+-]+)/.exec(code.className || '');
+                pre.setAttribute('data-lang', langMatch ? langMatch[1] : 'code');
+                if (pre.querySelector('.code-gutter')) { continue; }
+                var lines = (code.textContent || '').replace(/\n$/, '').split('\n');
+                var gutter = document.createElement('div');
+                gutter.className = 'code-gutter';
+                var nums = [];
+                for (var n = 1; n <= lines.length; n++){ nums.push(String(n)); }
+                gutter.textContent = nums.join('\n');
+                var body = document.createElement('div');
+                body.className = 'code-body';
+                code.parentNode.replaceChild(body, code);
+                body.appendChild(code);
+                pre.insertBefore(gutter, body);
+                let copy = document.createElement('button');
+                copy.type = 'button';
+                copy.className = 'code-copy';
+                copy.textContent = 'Copy';
+                // 事件挂到 pre 上做委托，避免按钮被伪元素/重排吞掉点击。
+                pre.addEventListener('click', function(ev){
+                  var target = ev.target;
+                  if (!target || !target.classList || !target.classList.contains('code-copy')) { return; }
+                  var text = code.textContent;
+                  copy.textContent = 'Copied';
+                  setTimeout(function(){ copy.textContent = 'Copy'; }, 1200);
+                  function fallback(){
+                    var ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.position = 'fixed';
+                    ta.style.top = '0';
+                    ta.style.left = '0';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.focus();
+                    ta.select();
+                    try { document.execCommand('copy'); } catch(e){}
+                    document.body.removeChild(ta);
+                  }
+                  if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).catch(fallback);
+                  } else { fallback(); }
+                });
+                pre.appendChild(copy);
+                pre.dataset.polished = '1';
+              }
+            };
             // 段渲染 + 后处理：标题 id/锚点、图片懒加载、KaTeX、代码高亮（分帧）
             window.__mdit.renderSection = function(section, container, syncHighlight){
               var html = window.__mdit.render(section.text);
@@ -811,18 +887,24 @@ final class MarkdownWebView: WKWebView {
               }
               container.querySelectorAll('img').forEach(function(im){ im.loading = 'lazy'; im.decoding = 'async'; });
               var codes = Array.prototype.slice.call(container.querySelectorAll('pre code'));
-              if(!window.hljs){ return; }
+              if(!window.hljs){ window.__polishCodeBlocks(container); return; }
               if(syncHighlight || codes.length <= 12){
                 codes.forEach(function(b){ try { window.hljs.highlightElement(b); } catch(e){} });
+                window.__polishCodeBlocks(container);
               } else {
                 window.__highlightQueue = (window.__highlightQueue || []).concat(codes);
+                window.__polishRoots = (window.__polishRoots || []).concat(container);
                 if(!window.__highlighting){
                   window.__highlighting = true;
                   (function drain(){
                     var batch = window.__highlightQueue.splice(0, 8);
                     batch.forEach(function(b){ try { window.hljs.highlightElement(b); } catch(e){} });
                     if(window.__highlightQueue.length){ window.requestAnimationFrame(drain); }
-                    else { window.__highlighting = false; }
+                    else {
+                      window.__highlighting = false;
+                      (window.__polishRoots || []).forEach(function(r){ window.__polishCodeBlocks(r); });
+                      window.__polishRoots = [];
+                    }
                   })();
                 }
               }

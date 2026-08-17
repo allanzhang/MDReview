@@ -2,7 +2,7 @@
 
 SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读审阅器**——快、简洁、克制，不堆编辑功能，对标 Typora 的"轻量纯净版"。
 
-当前版本：**V1.0.1**（2026-08-17）
+当前版本：**V1.1.0**（2026-08-17）
 
 ## 运行方式
 - 打开 `MDReview.xcodeproj` → Xcode 里 `Cmd+R` 即可运行（已 ad-hoc 签名，本机直接跑）。
@@ -21,6 +21,8 @@ SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读�
 ### 渲染（MD 语法全家桶，全部离线内置）
 - **GFM**：表格 / 任务列表 / 删除线 / 单换行即换行（`breaks`，符合国内文档习惯）
 - **表格列宽内容测宽**：按每列 `max-content` 计算理想宽度，写入 `colgroup` + fixed 布局；窄容器下最小约 120px，避免首列被挤压或单列独占（含图片、合并单元格的表格自动回退原布局）
+- **代码块**：语言栏 + 行号 + 右上角 Copy 按钮；细滚动条、亮暗双主题
+- **任务列表**：静态禁用 checkbox，前置圆点，与普通列表缩进一致
 - **KaTeX 数学公式**：`$...$` / `$$...$$`（math 行内规则先拦截再渲染，防 markdown-it 破坏）
 - **Mermaid 图表**：按需加载（文档含 ` ```mermaid ` 才内联渲染库），失败降级保留原代码
 - **代码高亮**：`highlight.js` 36 语言，亮/暗双主题；大文档分帧渐进高亮不阻塞首屏
@@ -55,7 +57,7 @@ SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读�
 - **菜单栏**：File（Open…`⌘O` / Open Recent / External Editor…`⌘E` / Export）、View（Sidebar `⌃⌘S` / Source-Rendered / Appearance）；不提供 New Window / Tab
 - **工具栏**：Sidebar / Open / Search `⌘F` / Source-Rendered / 外观 / Export，语义分组克制
 - **侧栏**：Outline / Recent 切换（图标+文字、选中高亮、无自绘描边），列表首尾行圆角、hover 反馈
-- **阅读进度条**：内容区顶部 2px accent 细条随滚动增长
+- **阅读进度条**：内容区顶部渐变胶囊进度条，带轻微阴影和动画
 - **空状态引导页**（大 Open 按钮）、窗口标题显示文件名 + 目录 + 字数、拖拽高亮
 - **App 图标**：标准 Assets.xcassets（16~512 @1x/@2x 全尺寸集）
 

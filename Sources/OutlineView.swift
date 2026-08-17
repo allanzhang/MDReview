@@ -104,8 +104,8 @@ private struct OutlineRow: View {
                               : Color.black.opacity(0.06))
             }
         }
-        .animation(.easeOut(duration: 0.12), value: isActive)
-        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .animation(.easeOut(duration: 0.16), value: isActive)
+        .animation(.easeOut(duration: 0.16), value: isHovering)
         .onHover { isHovering = $0 }
     }
 }
