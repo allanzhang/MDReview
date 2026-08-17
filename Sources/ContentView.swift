@@ -250,7 +250,8 @@ struct ContentView: View {
             if doc.showSource && doc.url != nil {
                 SourceView(text: doc.rawText,
                            renderer: renderer,
-                           docName: doc.url?.lastPathComponent)
+                           docName: doc.url?.lastPathComponent,
+                           appearance: doc.appearance)
             }
         }
         .contextMenu {
@@ -657,9 +658,10 @@ struct SourceView: View {
     let text: String
     let renderer: MarkdownRenderer
     let docName: String?
+    let appearance: AppearanceMode
 
     var body: some View {
-        SourceTextView(text: text, renderer: renderer, docName: docName)
+        SourceTextView(text: text, renderer: renderer, docName: docName, appearance: appearance)
             .background(Color(nsColor: .textBackgroundColor))
     }
 }
@@ -670,6 +672,7 @@ struct SourceTextView: NSViewRepresentable {
     let text: String
     let renderer: MarkdownRenderer
     let docName: String?
+    let appearance: AppearanceMode
 
     func makeCoordinator() -> SourceTextCoordinator {
         SourceTextCoordinator(renderer: renderer, docName: docName)
@@ -680,7 +683,17 @@ struct SourceTextView: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        context.coordinator.update(scroll: scroll, text: text, docName: docName)
+        context.coordinator.update(scroll: scroll, text: text, docName: docName, appearance: appearance)
+    }
+}
+
+/// 主题切换时同步刷新源码文本外观的 NSTextView 子类。
+private final class ThemedTextView: NSTextView {
+    var appearanceChanged: (() -> Void)?
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        appearanceChanged?()
     }
 }
 
@@ -716,13 +729,14 @@ final class SourceTextCoordinator: NSObject {
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = true
 
-        let tv = NSTextView()
+        let tv = ThemedTextView()
+        tv.appearanceChanged = { [weak self] in
+            MainActor.assumeIsolated { self?.refreshAppearance() }
+        }
         tv.isEditable = false
         tv.isSelectable = true
         tv.isRichText = false
         tv.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-        tv.textColor = NSColor.labelColor.withAlphaComponent(0.82)
-        tv.backgroundColor = .textBackgroundColor
         tv.textContainerInset = NSSize(width: 28, height: 28)
         tv.textContainer?.widthTracksTextView = true
         tv.isVerticallyResizable = true
@@ -732,6 +746,7 @@ final class SourceTextCoordinator: NSObject {
 
         scrollView = scroll
         textView = tv
+        refreshAppearance()
         scroll.contentView.postsBoundsChangedNotifications = true
 
         let center = NotificationCenter.default
@@ -788,7 +803,7 @@ final class SourceTextCoordinator: NSObject {
         return scroll
     }
 
-    func update(scroll: NSScrollView, text: String, docName: String?) {
+    func update(scroll: NSScrollView, text: String, docName: String?, appearance: AppearanceMode) {
         guard textView != nil else { return }
         let docChanged = docName != self.docName
         self.docName = docName
@@ -802,6 +817,30 @@ final class SourceTextCoordinator: NSObject {
             restored = true
             restoreScroll()
         }
+        refreshAppearance()
+    }
+
+    /// 主题切换 / 系统外观变化时刷新源码视图文本与背景（现有文本属性同步更新）。
+    private func refreshAppearance() {
+        guard let tv = textView, let scroll = scrollView else { return }
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let textColor: NSColor = (dark ? NSColor.white : NSColor.black).withAlphaComponent(0.82)
+        let background: NSColor = dark
+            ? NSColor(calibratedWhite: 0.1216, alpha: 1)
+            : NSColor.white
+        tv.textColor = textColor
+        tv.backgroundColor = background
+        scroll.backgroundColor = background
+        scroll.drawsBackground = true
+        let length = tv.string.utf16.count
+        if length > 0 {
+            tv.textStorage?.beginEditing()
+            tv.textStorage?.addAttribute(.foregroundColor,
+                                         value: textColor,
+                                         range: NSRange(location: 0, length: length))
+            tv.textStorage?.endEditing()
+        }
+        tv.setNeedsDisplay(tv.bounds)
     }
 
     private func rebuildHeadings() {
