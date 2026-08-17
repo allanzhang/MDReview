@@ -2,6 +2,8 @@
 
 SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读审阅器**——快、简洁、克制，不堆编辑功能，对标 Typora 的"轻量纯净版"。
 
+当前版本：**V1.0.1**（2026-08-17）
+
 ## 运行方式
 - 打开 `MDReview.xcodeproj` → Xcode 里 `Cmd+R` 即可运行（已 ad-hoc 签名，本机直接跑）。
 - 工程由 `project.yml` + `xcodegen` 生成（`brew install xcodegen` 后 `xcodegen generate`）。
@@ -18,6 +20,7 @@ SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读�
 
 ### 渲染（MD 语法全家桶，全部离线内置）
 - **GFM**：表格 / 任务列表 / 删除线 / 单换行即换行（`breaks`，符合国内文档习惯）
+- **表格列宽内容测宽**：按每列 `max-content` 计算理想宽度，写入 `colgroup` + fixed 布局；窄容器下最小约 120px，避免首列被挤压或单列独占（含图片、合并单元格的表格自动回退原布局）
 - **KaTeX 数学公式**：`$...$` / `$$...$$`（math 行内规则先拦截再渲染，防 markdown-it 破坏）
 - **Mermaid 图表**：按需加载（文档含 ` ```mermaid ` 才内联渲染库），失败降级保留原代码
 - **代码高亮**：`highlight.js` 36 语言，亮/暗双主题；大文档分帧渐进高亮不阻塞首屏
@@ -32,7 +35,7 @@ SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读�
 
 ### 阅读工具
 - **全文搜索**：`Cmd+F` 呼出 Spotlight 式悬浮面板（高斯模糊，融入工具栏按钮区域）；输入 250ms 防抖、**Enter 下一个 / Shift+Enter 上一个**、Esc 关闭、命中计数、**无匹配显示 0 results**、有选中文字自动预填
-- **渲染 / 源码对照**：View 菜单切换（只读、等宽、可选中）
+- **渲染 / 源码对照**：工具栏纯图标按钮、View 菜单、阅读区右键均可切换；两个视图的滚动位置、阅读进度、大纲高亮独立记忆，Source 滚动位置按文档持久化，来回切换不会互相污染
 - **外部编辑器**：`Cmd+E`，优先 Cursor / VSCode，未装退回系统默认关联应用
 - **阅读进度记忆**：按章节 id 存 **Swift/UserDefaults**（非 localStorage），重开自动回到上次位置
 - **文件热更新**：监听当前文件，外部编辑器保存后 400ms 防抖自动重载；文件删除自动停止监听
@@ -50,7 +53,7 @@ SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读�
 
 ### 界面
 - **菜单栏**：File（Open…`⌘O` / Open Recent / External Editor…`⌘E` / Export）、View（Sidebar `⌃⌘S` / Source-Rendered / Appearance）；不提供 New Window / Tab
-- **工具栏**：Sidebar / Open / Search `⌘F` / 外观 / Export，语义分组克制
+- **工具栏**：Sidebar / Open / Search `⌘F` / Source-Rendered / 外观 / Export，语义分组克制
 - **侧栏**：Outline / Recent 切换（图标+文字、选中高亮、无自绘描边），列表首尾行圆角、hover 反馈
 - **阅读进度条**：内容区顶部 2px accent 细条随滚动增长
 - **空状态引导页**（大 Open 按钮）、窗口标题显示文件名 + 目录 + 字数、拖拽高亮
@@ -82,6 +85,8 @@ MDReview/                         (工程根目录)
 - 关键机制：
   - **单次导航**：markdown 经 `jsonString` 转义（含 `</script>` 防护）内联进 HTML 一次性加载
   - **消息通道**：页面脚本 `postMessage` 回推大纲 / 当前章节 / 阅读进度（0~1）到 Swift
+  - **表格测宽**：克隆表格按 `max-content` 测列宽，再写 `colgroup` + fixed 布局；只测一次，滚动/切主题不重复计算
+  - **视图状态隔离**：rendered 记录精确 `scrollY`，source 独立保存滚动偏移，切换时只恢复当前视图自己的状态
   - **分块渲染**：`scanAndSplit` 按标题切分（跳过代码围栏），大纲统一由扫描生成，滚动渐进加载
   - **`pageLoaded` 闸门**：页面未就绪时一律跳过 `evaluateJavaScript`，杜绝报错
   - **菜单动作总线**：File/View 菜单命令经 NotificationCenter 转发给主界面执行
