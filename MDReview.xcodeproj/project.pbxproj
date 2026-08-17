@@ -29,7 +29,6 @@
 		80F6A8C6EC983F03A056FE0A /* KaTeX_Main-Bold.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = F897314445FB4D270ECC9443 /* KaTeX_Main-Bold.woff2 */; };
 		87748E2A45EB0C8A06C5FD78 /* KaTeX_Size2-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = C10C9BC090B575DBD6C47D94 /* KaTeX_Size2-Regular.woff2 */; };
 		8D679CBAB297B6E6763CB7AB /* KaTeX_AMS-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = 162CCDA1B0E0378E53331F65 /* KaTeX_AMS-Regular.woff2 */; };
-		8E57937830FB63F5524EA129 /* SearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B48FD506F9616AB5B1C5A27 /* SearchPanel.swift */; };
 		9FC8F3D20D84BB68FABA673D /* katex.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 57DFF9067B7CB4686051BA5A /* katex.min.js */; };
 		A6C786DCE048CDB90F7828F0 /* markdown-it.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 3EC7CBB60343263839F5D098 /* markdown-it.min.js */; };
 		A9571C0C4129DC877400674B /* KaTeX_Caligraphic-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = D4C7D1DB5A6252C7FA32BADD /* KaTeX_Caligraphic-Regular.woff2 */; };
@@ -38,6 +37,7 @@
 		B4BEC0CCFFB950799E6AA6F8 /* OutlineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17F20383DC2B6519F2125C2 /* OutlineView.swift */; };
 		BAC04F6A066C8F0BA0CA652F /* reader.css in Resources */ = {isa = PBXBuildFile; fileRef = B88D9F2419DB3ACA21C204E9 /* reader.css */; };
 		C3575DD0F9807EBCFE9874F4 /* KaTeX_Script-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = F39D2DFEEC8CDB5B1516F07D /* KaTeX_Script-Regular.woff2 */; };
+		CB96FC4B3C145CA28CBC407E /* NativeSearchField.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2FE69ADD37C04DE958C34D1 /* NativeSearchField.swift */; };
 		CF21B82584F3DDC8E77281DA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3D628C539738A3D101AA4C34 /* Assets.xcassets */; };
 		D3F00781E836F53F852B1899 /* KaTeX_Math-Italic.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = CAACBADB0D9ACC1D73DB3A2F /* KaTeX_Math-Italic.woff2 */; };
 		D737AC09707DD33313BC274C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 511FFD4007D6E5EF956FCA69 /* ContentView.swift */; };
@@ -63,7 +63,6 @@
 		511FFD4007D6E5EF956FCA69 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		57DFF9067B7CB4686051BA5A /* katex.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = katex.min.js; sourceTree = "<group>"; };
 		5F6F433AADE9F62B249F8A36 /* DocState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocState.swift; sourceTree = "<group>"; };
-		6B48FD506F9616AB5B1C5A27 /* SearchPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPanel.swift; sourceTree = "<group>"; };
 		6C7F6DD39CD89251EE4812B1 /* KaTeX_SansSerif-Bold.woff2 */ = {isa = PBXFileReference; path = "KaTeX_SansSerif-Bold.woff2"; sourceTree = "<group>"; };
 		6E546F0900486F133CC182CF /* highlight.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = highlight.min.js; sourceTree = "<group>"; };
 		6FCC1B2160C310C25C9737D3 /* KaTeX_SansSerif-Regular.woff2 */ = {isa = PBXFileReference; path = "KaTeX_SansSerif-Regular.woff2"; sourceTree = "<group>"; };
@@ -89,6 +88,7 @@
 		E5B0B10D76B61D87CBEEEEF1 /* MDReview.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MDReview.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EB4D6F6104551C43345B3C40 /* KaTeX_Size3-Regular.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Size3-Regular.woff2"; sourceTree = "<group>"; };
 		F17F20383DC2B6519F2125C2 /* OutlineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineView.swift; sourceTree = "<group>"; };
+		F2FE69ADD37C04DE958C34D1 /* NativeSearchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSearchField.swift; sourceTree = "<group>"; };
 		F39D2DFEEC8CDB5B1516F07D /* KaTeX_Script-Regular.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Script-Regular.woff2"; sourceTree = "<group>"; };
 		F897314445FB4D270ECC9443 /* KaTeX_Main-Bold.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Main-Bold.woff2"; sourceTree = "<group>"; };
 		F8CE2951839BF46F042A4734 /* KaTeX_Caligraphic-Bold.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Caligraphic-Bold.woff2"; sourceTree = "<group>"; };
@@ -131,10 +131,10 @@
 				5F6F433AADE9F62B249F8A36 /* DocState.swift */,
 				4E5776CD166E7F65A5FE021D /* MarkdownRenderer.swift */,
 				7878349E5ED52673CFBC8BCC /* MDReviewApp.swift */,
+				F2FE69ADD37C04DE958C34D1 /* NativeSearchField.swift */,
 				F17F20383DC2B6519F2125C2 /* OutlineView.swift */,
 				92E179B13FC0EB5161A432DC /* ReaderWebView.swift */,
 				DAE9A53CCD831C476B653526 /* RecentView.swift */,
-				6B48FD506F9616AB5B1C5A27 /* SearchPanel.swift */,
 				AFAADFF6FD18E6A83AA15ADB /* Resources */,
 			);
 			path = Sources;
@@ -287,10 +287,10 @@
 				736FEBA006E18932CC54E8DC /* DocState.swift in Sources */,
 				6AF33D91912BF9541D0F4617 /* MDReviewApp.swift in Sources */,
 				6C13928404E4FFFDD3F9BDB1 /* MarkdownRenderer.swift in Sources */,
+				CB96FC4B3C145CA28CBC407E /* NativeSearchField.swift in Sources */,
 				B4BEC0CCFFB950799E6AA6F8 /* OutlineView.swift in Sources */,
 				6A6D5947CC2C71F20E31C63B /* ReaderWebView.swift in Sources */,
 				54DD33801BBC3B35CA64F8A1 /* RecentView.swift in Sources */,
-				8E57937830FB63F5524EA129 /* SearchPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

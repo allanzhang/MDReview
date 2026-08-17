@@ -80,7 +80,7 @@ private struct OutlineRow: View {
                 .font(.system(size: 13, weight: isActive ? .semibold : .regular))
                 .foregroundStyle(isActive ? Color.primary.opacity(0.78) : (heading.level > 1 ? Color.secondary : Color.primary))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 6)
+                .padding(.vertical, 3)
                 .padding(.leading, 10 + indent)
                 .padding(.trailing, 10)
                 .contentShape(Rectangle())

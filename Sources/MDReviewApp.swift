@@ -57,6 +57,10 @@ struct MDReviewApp: App {
             }
         }
         CommandGroup(after: .toolbar) {
+            Button { postMenuAction(.search) } label: {
+                Label("Find", systemImage: "magnifyingglass")
+            }
+            .keyboardShortcut("f", modifiers: .command)
             Button { postMenuAction(.toggleSidebar) } label: {
                 Label("Toggle Sidebar", systemImage: "sidebar.left")
             }
@@ -80,12 +84,26 @@ struct MDReviewApp: App {
                 Label("Appearance", systemImage: "circle.lefthalf.filled")
             }
         }
+        CommandGroup(replacing: .pasteboard) {
+            Button("Copy") {
+                NSApp.sendAction(Selector(("copy:")), to: nil, from: nil)
+            }
+            .keyboardShortcut("c", modifiers: .command)
+            Button("Paste") {
+                NSApp.sendAction(Selector(("paste:")), to: nil, from: nil)
+            }
+            .keyboardShortcut("v", modifiers: .command)
+            Button("Select All") {
+                NSApp.sendAction(Selector(("selectAll:")), to: nil, from: nil)
+            }
+            .keyboardShortcut("a", modifiers: .command)
+        }
     }
 }
 
 /// 菜单动作：经 NotificationCenter 转发给 ContentView 处理（单窗口场景简单可靠）。
 enum MenuAction {
-    case openPanel, toggleSidebar, toggleSource
+    case openPanel, search, toggleSidebar, toggleSource
     case appearanceSystem, appearanceLight, appearanceDark
     case exportHTML, exportPDF, openInExternalEditor, revealInFinder
     case openRecent(URL), clearRecent
@@ -94,6 +112,11 @@ enum MenuAction {
 extension Notification.Name {
     static let mdreviewMenuAction = Notification.Name("mdreview.menuAction")
     static let mdreviewSourceScroll = Notification.Name("mdreview.sourceScroll")
+    static let mdreviewSourceSearch = Notification.Name("mdreview.sourceSearch")
+    static let mdreviewSourceSearchNext = Notification.Name("mdreview.sourceSearchNext")
+    static let mdreviewSourceSearchPrev = Notification.Name("mdreview.sourceSearchPrev")
+    static let mdreviewSourceGetSelection = Notification.Name("mdreview.sourceGetSelection")
+    static let mdreviewSourceSelection = Notification.Name("mdreview.sourceSelection")
 }
 
 private func postMenuAction(_ action: MenuAction) {

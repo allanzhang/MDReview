@@ -423,7 +423,12 @@ final class MarkdownWebView: WKWebView {
           e = document.getElementById(id);
         }
       }
-      if(e){ e.scrollIntoView({block:'start'}); }
+      if(e){
+        // 用同一套实时坐标计算，避免 outline 跳转和 active 高亮各算各的。
+        if(window.__recomputeHeads){ window.__recomputeHeads(); }
+        var y = e.getBoundingClientRect().top + (window.scrollY || 0) - 20;
+        window.scrollTo(0, Math.max(0, y));
+      }
     };
     // 表格列宽：先按内容 max-content 测出每列理想宽度，再约束到最小/最大
     // 百分比，避免首列过窄或某列独占；最后用 colgroup + fixed 布局落地。
@@ -475,6 +480,22 @@ final class MarkdownWebView: WKWebView {
         for (var i = 0; i < widths.length; i++){ total += widths[i]; }
         if (total <= 0) { continue; }
         var available = (table.parentNode && table.parentNode.clientWidth) || host.clientWidth || 780;
+        // 表格内容本来就不宽时，保留自然宽度；只有超出容器才强制 100% 铺满。
+        if (total <= available) {
+          var oldNarrow = table.querySelector('colgroup');
+          if (oldNarrow){ oldNarrow.parentNode.removeChild(oldNarrow); }
+          var colgroupNarrow = document.createElement('colgroup');
+          for (var ni = 0; ni < widths.length; ni++){
+            var colNarrow = document.createElement('col');
+            colNarrow.style.width = widths[ni] + 'px';
+            colgroupNarrow.appendChild(colNarrow);
+          }
+          table.insertBefore(colgroupNarrow, table.firstChild);
+          table.style.width = 'max-content';
+          table.style.tableLayout = 'fixed';
+          table.dataset.fitted = '1';
+          continue;
+        }
         var minPct = Math.min(18, Math.max(12, 120 / available * 100));
         var maxPct = Math.min(60, 100 / widths.length * 2);
         var pcts = [];
@@ -505,6 +526,7 @@ final class MarkdownWebView: WKWebView {
           colgroup.appendChild(col);
         }
         table.insertBefore(colgroup, table.firstChild);
+        table.style.width = '100%';
         table.style.tableLayout = 'fixed';
         table.dataset.fitted = '1';
       }
@@ -625,7 +647,12 @@ final class MarkdownWebView: WKWebView {
           e = document.getElementById(saved);
         }
       }
-      if(e){ e.scrollIntoView({block:'start'}); window.__onScroll && window.__onScroll(); }
+      if(e){
+        if(window.__recomputeHeads){ window.__recomputeHeads(); }
+        var y = e.getBoundingClientRect().top + (window.scrollY || 0) - 20;
+        window.scrollTo(0, Math.max(0, y));
+        window.__onScroll && window.__onScroll();
+      }
     };
     window.__restoreProgress = function(){
       // 上次阅读位置由 Swift 侧从 UserDefaults 读出并注入 window.__savedProgress
@@ -653,6 +680,15 @@ final class MarkdownWebView: WKWebView {
     }, {passive:true});
     // 图片等资源异步加载会改变布局，load 后重算标题坐标缓存
     window.addEventListener('load', window.__recomputeHeads);
+    // 窗口/侧栏/内容宽度变化后重算标题坐标，避免 outline 高亮与内容脱节
+    var __resizeTimer = null;
+    window.addEventListener('resize', function(){
+      if(__resizeTimer){ clearTimeout(__resizeTimer); }
+      __resizeTimer = setTimeout(function(){
+        if(window.__recomputeHeads){ window.__recomputeHeads(); }
+        if(window.__onScroll){ window.__onScroll(); }
+      }, 120);
+    });
     // —— 外观主题：由 __forceTheme（'system'|'light'|'dark'）决定，默认跟随系统 ——
     window.applyTheme = function(){
       var mode = window.__forceTheme || 'system';
@@ -714,6 +750,36 @@ final class MarkdownWebView: WKWebView {
                 if(P.deflist){ window.__mdit.use(P.deflist); }
               } catch(e){}
             }
+            // —— CJK 标点粗体兜底：标准 markdown-it 会把「」等当作标点边界，
+            // 导致 **「...」** 无法开/闭强调。这里不改解析规则，只对标准解析后
+            // 残留在 text token 里的 **...** 做最小修复，且仅当内容首尾是 CJK 标点。
+            var cjkPunct = /[\u3000-\u303F\uFF01-\uFF5E\u2018\u2019\u201C\u201D\u3008-\u3011]/;
+            var defaultTextRender = window.__mdit.renderer.rules.text || function(tokens, idx, options, env, self){
+              return window.__mdit.utils.escapeHtml(tokens[idx].content);
+            };
+            window.__mdit.renderer.rules.text = function(tokens, idx, options, env, self){
+              var content = tokens[idx].content;
+              if (content.indexOf('**') < 0) { return defaultTextRender(tokens, idx, options, env, self); }
+              var out = '';
+              var i = 0;
+              while (i < content.length){
+                if (content[i] === '*' && content[i + 1] === '*'){
+                  var end = content.indexOf('**', i + 2);
+                  if (end >= 0){
+                    var inner = content.slice(i + 2, end);
+                    if (inner && inner.indexOf('\n') < 0 &&
+                        (cjkPunct.test(inner.charAt(0)) || cjkPunct.test(inner.charAt(inner.length - 1)))){
+                      out += '<strong>' + window.__mdit.utils.escapeHtml(inner) + '</strong>';
+                      i = end + 2;
+                      continue;
+                    }
+                  }
+                }
+                out += content[i];
+                i++;
+              }
+              return out;
+            };
             // —— 数学公式（$...$ / $$...$$）：在 markdown-it 其他行内规则前拦截，避免
             // breaks 的 <br> 切段、反斜杠转义（\,→,）、强调（*_）等破坏公式源码；
             // 直接用 KaTeX 渲染成 HTML。规则放在 strikethrough 之前（backticks 之后），
@@ -760,24 +826,6 @@ final class MarkdownWebView: WKWebView {
               state.pos = end + 1;
               return true;
             });
-            // —— **粗体** + CJK 全角标点边界：CommonMark 把「」等当作标点，
-            // 导致 **「...」** 无法开/闭强调；这里只对边界为 CJK 标点的情况
-            // 用 renderInline 重新解析内部内容并包 strong。
-            var cjkPunct = /[\u3000-\u303F\uFF01-\uFF5E\u2018\u2019\u201C\u201D\u3008-\u3011]/;
-            window.__mdit.inline.ruler.before('emphasis', 'cjk_bold', function(state, silent){
-              if (state.src.charCodeAt(state.pos) !== 0x2A || state.src.charCodeAt(state.pos + 1) !== 0x2A) { return false; }
-              var end = state.src.indexOf('**', state.pos + 2);
-              if (end < 0) { return false; }
-              var content = state.src.slice(state.pos + 2, end);
-              if (!content || content.indexOf('\n') >= 0 || content.indexOf('**') >= 0) { return false; }
-              if (!cjkPunct.test(content.charAt(0)) && !cjkPunct.test(content.charAt(content.length - 1))) { return false; }
-              if (silent) { return true; }
-              var html = state.md.renderInline(content);
-              var token = state.push('html_inline', '', 0);
-              token.content = '<strong>' + html + '</strong>';
-              state.pos = end + 2;
-              return true;
-            });
             var src = \#(mdJSON);
             var chunkMode = '\#(chunkMode)';
 
@@ -809,12 +857,6 @@ final class MarkdownWebView: WKWebView {
               }
               flush();
               return {outline: outline, sections: sections};
-            }
-            function injectAnchor(h){
-              var a = document.createElement('a');
-              a.className = 'header-anchor'; a.href = '#' + h.id;
-              a.setAttribute('aria-hidden', 'true'); a.textContent = '#';
-              h.insertBefore(a, h.firstChild);
             }
             // 代码块精致化：语言栏 + 行号栏 + 代码主体。
             // 不拆高亮后的 DOM，而是把 gutter 与 code 并排放进 grid，避免破坏 hljs 结构。
@@ -883,7 +925,6 @@ final class MarkdownWebView: WKWebView {
               var hs = container.querySelectorAll('h1,h2,h3,h4,h5,h6');
               for (var k = 0; k < hs.length; k++){
                 if(section.startSeq >= 0){ hs[k].id = 'h-' + (section.startSeq + k); }
-                injectAnchor(hs[k]);
               }
               container.querySelectorAll('img').forEach(function(im){ im.loading = 'lazy'; im.decoding = 'async'; });
               var codes = Array.prototype.slice.call(container.querySelectorAll('pre code'));
