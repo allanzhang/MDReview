@@ -695,6 +695,7 @@ final class SourceTextCoordinator: NSObject {
     private var headingY: [String: CGFloat] = [:]
     nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
     private var lastSaveTime: TimeInterval = 0
+    private var programmaticActiveUntil: TimeInterval = 0
     private var restored = false
     private var searchTerm = ""
     private var searchRanges: [NSRange] = []
@@ -852,6 +853,7 @@ final class SourceTextCoordinator: NSObject {
         guard glyphRange.location != NSNotFound else { return }
         let rect = layout.boundingRect(forGlyphRange: glyphRange, in: container)
         guard let scroll = scrollView else { return }
+        programmaticActiveUntil = Date().timeIntervalSince1970 + 0.4
         scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, rect.minY - 20)))
         scroll.reflectScrolledClipView(scroll.contentView)
         handleScroll()
@@ -908,13 +910,15 @@ final class SourceTextCoordinator: NSObject {
         let progress = maxY > 0 ? min(1, max(0, visible.minY / maxY)) : 0
         renderer.readingProgress = progress
 
-        let midY = visible.minY + 60
-        var active = headings.first?.id
-        for h in headings {
-            if let y = headingY[h.id], y <= midY { active = h.id }
-        }
-        if let active, active != renderer.activeHeadingID {
-            renderer.activeHeadingID = active
+        if Date().timeIntervalSince1970 > programmaticActiveUntil {
+            let midY = visible.minY + 20
+            var active = headings.first?.id
+            for h in headings {
+                if let y = headingY[h.id], y <= midY { active = h.id }
+            }
+            if let active, active != renderer.activeHeadingID {
+                renderer.activeHeadingID = active
+            }
         }
 
         guard docName != nil else { return }

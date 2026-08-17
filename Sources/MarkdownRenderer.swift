@@ -426,8 +426,11 @@ final class MarkdownWebView: WKWebView {
       if(e){
         // 用同一套实时坐标计算，避免 outline 跳转和 active 高亮各算各的。
         if(window.__recomputeHeads){ window.__recomputeHeads(); }
+        // 程序化滚动短暂锁定 active，避免滚动事件把刚点击的选中抢走。
+        window.__programmaticActiveUntil = Date.now() + 400;
         var y = e.getBoundingClientRect().top + (window.scrollY || 0) - 20;
         window.scrollTo(0, Math.max(0, y));
+        if(window.__onScroll){ window.__onScroll(); }
       }
     };
     // 表格列宽：先按内容 max-content 测出每列理想宽度，再约束到最小/最大
@@ -595,11 +598,13 @@ final class MarkdownWebView: WKWebView {
         heads[i].__docTop = heads[i].getBoundingClientRect().top + sy;
       }
     };
+    window.__programmaticActiveUntil = 0;
     window.__lastActive = null;
     window.__onScroll = function(){
+      if(Date.now() < window.__programmaticActiveUntil){ return; }
       var heads = window.__heads;
       if(!heads || !heads.length){ return; }
-      var target = (window.scrollY || 0) + 100;
+      var target = (window.scrollY || 0) + 20;
       var lo = 0, hi = heads.length - 1, idx = -1;
       while(lo <= hi){
         var mid = (lo + hi) >> 1;
@@ -609,8 +614,6 @@ final class MarkdownWebView: WKWebView {
       var active = idx >= 0 ? heads[idx].id : heads[0].id;
       if(active && active !== window.__lastActive){
         window.__lastActive = active;
-        // 阅读进度持久化在 Swift 侧（UserDefaults，active 消息每次章节切换都回传）；
-        // 不用 localStorage（file:// baseURL 下不持久），也不节流（防快速滚动漏存最终章节）。
         if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.active){
           window.webkit.messageHandlers.active.postMessage(active);
         }
