@@ -49,6 +49,8 @@ final class MarkdownWebView: WKWebView {
         let menu = NSMenu()
         menu.addItem(makeItem("Copy", #selector(copySelection(_:))))
         menu.addItem(.separator())
+        menu.addItem(makeItem("Toggle Source / Rendered", #selector(toggleSource(_:))))
+        menu.addItem(.separator())
         menu.addItem(makeItem("Reveal in Finder", #selector(revealInFinder(_:))))
         menu.addItem(makeItem("Open in External Editor", #selector(openInExternalEditor(_:))))
         menu.addItem(.separator())
@@ -65,6 +67,7 @@ final class MarkdownWebView: WKWebView {
         // 复制选中文字：走系统 copy 响应链（WKWebView 为第一响应者时生效）
         NSApp.sendAction(Selector(("copy:")), to: nil, from: nil)
     }
+    @objc private func toggleSource(_ sender: Any?) { post(.toggleSource) }
     @objc private func revealInFinder(_ sender: Any?) { post(.revealInFinder) }
     @objc private func openInExternalEditor(_ sender: Any?) { post(.openInExternalEditor) }
     @objc private func exportHTML(_ sender: Any?) { post(.exportHTML) }
@@ -87,6 +90,8 @@ final class MarkdownWebView: WKWebView {
     @Published var activeHeadingID: String? = nil
     /// 阅读进度 0~1（顶部进度条用），滚动时由 JS 回传。
     @Published var readingProgress: Double = 0
+    /// rendered 页面最近一次 JS 回传的精确滚动偏移；切换源码/渲染时用于恢复实际位置。
+    private(set) var renderedScrollOffset: Double = 0
     /// 当前文档文件名（阅读进度持久化 key 用，Swift/UserDefaults 侧）。
     private(set) var currentDocName: String?
 
@@ -127,6 +132,7 @@ final class MarkdownWebView: WKWebView {
     // MARK: - 阅读进度持久化（Swift/UserDefaults，可靠跨会话/跨窗口）
 
     private static let progressKeyPrefix = "mdreview.prog."
+    private static let sourceScrollKeyPrefix = "mdreview.sourceScroll."
 
     /// 当前章节切换（active 消息）时写入 UserDefaults。
     func saveProgress(_ headingID: String) {
@@ -138,6 +144,19 @@ final class MarkdownWebView: WKWebView {
     static func savedProgress(for docName: String) -> String? {
         guard !docName.isEmpty else { return nil }
         return UserDefaults.standard.string(forKey: progressKeyPrefix + docName)
+    }
+
+    /// 源码视图独立保存/恢复滚动偏移（与 rendered 的章节记忆分开）。
+    func saveSourceScrollOffset(_ offset: CGFloat) {
+        guard let name = currentDocName, !name.isEmpty else { return }
+        UserDefaults.standard.set(Double(offset), forKey: Self.sourceScrollKeyPrefix + name)
+    }
+
+    static func savedSourceScrollOffset(for docName: String) -> CGFloat? {
+        guard !docName.isEmpty,
+              let stored = UserDefaults.standard.object(forKey: sourceScrollKeyPrefix + docName) as? Double
+        else { return nil }
+        return CGFloat(stored)
     }
 
     /// 手动切换外观模式（不重载页面，直接注入 JS 生效，保留滚动位置与渲染状态）。
@@ -166,6 +185,16 @@ final class MarkdownWebView: WKWebView {
     func scrollTo(_ id: String) {
         guard pageLoaded else { return }
         webView.evaluateJavaScript("scrollToHeading(\(Self.jsonString(for: id)))", completionHandler: nil)
+    }
+
+    func updateRenderedScrollOffset(_ offset: Double) {
+        renderedScrollOffset = offset
+    }
+
+    /// 切回 rendered 时把 WebView 滚回离开前的真实位置（仅恢复数值会让进度条/大纲和内容脱节）。
+    func restoreRenderedScrollOffset(_ offset: Double) {
+        guard pageLoaded else { return }
+        webView.evaluateJavaScript("window.scrollTo(0, \(offset))", completionHandler: nil)
     }
 
     /// 导出当前渲染结果为 PDF（多页，含代码高亮 / KaTeX / 样式，与屏幕渲染一致）。
@@ -394,6 +423,90 @@ final class MarkdownWebView: WKWebView {
       }
       if(e){ e.scrollIntoView({block:'start'}); }
     };
+    // 表格列宽：先按内容 max-content 测出每列理想宽度，再约束到最小/最大
+    // 百分比，避免首列过窄或某列独占；最后用 colgroup + fixed 布局落地。
+    window.__fitTables = function(root){
+      var tables = root.querySelectorAll('table');
+      for (var ti = 0; ti < tables.length; ti++){
+        var table = tables[ti];
+        if (!table.parentNode.classList.contains('md-table-wrap')){
+          var wrap = document.createElement('div');
+          wrap.className = 'md-table-wrap';
+          table.parentNode.insertBefore(wrap, table);
+          wrap.appendChild(table);
+        }
+        if (table.dataset.fitted || table.querySelector('img')) { continue; }
+        var rows = table.rows;
+        if (!rows.length) { continue; }
+        var colCount = rows[0].cells.length;
+        if (!colCount) { continue; }
+        var hasSpan = false;
+        for (var r = 0; r < rows.length; r++){
+          var cells = rows[r].cells;
+          for (var c = 0; c < cells.length; c++){
+            if (cells[c].hasAttribute('colspan') || cells[c].hasAttribute('rowspan')){
+              hasSpan = true;
+              break;
+            }
+          }
+          if (hasSpan) { break; }
+        }
+        if (hasSpan) { continue; }
+        var clone = table.cloneNode(true);
+        clone.style.cssText = 'position:absolute;left:-99999px;top:0;display:table;width:max-content;max-width:none;table-layout:auto;visibility:hidden;';
+        var host = document.getElementById('content') || document.body;
+        host.appendChild(clone);
+        var widths = [];
+        for (var c = 0; c < colCount; c++){
+          var max = 0;
+          for (var r = 0; r < clone.rows.length; r++){
+            var cell = clone.rows[r].cells[c];
+            if (cell){
+              var w = cell.getBoundingClientRect().width;
+              if (w > max) { max = w; }
+            }
+          }
+          widths.push(Math.ceil(Math.min(max, 600)));
+        }
+        host.removeChild(clone);
+        var total = 0;
+        for (var i = 0; i < widths.length; i++){ total += widths[i]; }
+        if (total <= 0) { continue; }
+        var available = (table.parentNode && table.parentNode.clientWidth) || host.clientWidth || 780;
+        var minPct = Math.min(18, Math.max(12, 120 / available * 100));
+        var maxPct = Math.min(60, 100 / widths.length * 2);
+        var pcts = [];
+        for (var i = 0; i < widths.length; i++){ pcts.push(widths[i] / total * 100); }
+        for (var iter = 0; iter < 12; iter++){
+          var sum = 0;
+          for (var i = 0; i < pcts.length; i++){ sum += pcts[i]; }
+          if (sum <= 0) { break; }
+          var scale = 100 / sum;
+          var changed = false;
+          for (var i = 0; i < pcts.length; i++){
+            pcts[i] *= scale;
+            if (pcts[i] < minPct){ pcts[i] = minPct; changed = true; }
+            if (pcts[i] > maxPct){ pcts[i] = maxPct; changed = true; }
+          }
+          if (!changed) { break; }
+        }
+        var finalSum = 0;
+        for (var i = 0; i < pcts.length; i++){ finalSum += pcts[i]; }
+        if (finalSum <= 0) { continue; }
+        for (var i = 0; i < pcts.length; i++){ pcts[i] = pcts[i] * 100 / finalSum; }
+        var old = table.querySelector('colgroup');
+        if (old){ old.parentNode.removeChild(old); }
+        var colgroup = document.createElement('colgroup');
+        for (var ci = 0; ci < pcts.length; ci++){
+          var col = document.createElement('col');
+          col.style.width = pcts[ci].toFixed(2) + '%';
+          colgroup.appendChild(col);
+        }
+        table.insertBefore(colgroup, table.firstChild);
+        table.style.tableLayout = 'fixed';
+        table.dataset.fitted = '1';
+      }
+    };
     window.__marks = []; window.__searchIdx = -1;
     window.__clearSearch = function(){
       var cs = document.querySelectorAll('mark.srch');
@@ -530,9 +643,9 @@ final class MarkdownWebView: WKWebView {
         var p = Math.min(1, Math.max(0, window.scrollY / max));
         if (Math.abs(p - (window.__lastProgress || 0)) > 0.002) {
           window.__lastProgress = p;
-          if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.progress) {
-            window.webkit.messageHandlers.progress.postMessage(p);
-          }
+        }
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.progress) {
+          window.webkit.messageHandlers.progress.postMessage({progress: p, offset: window.scrollY});
         }
       });
     }, {passive:true});
@@ -690,6 +803,7 @@ final class MarkdownWebView: WKWebView {
               html = html.replace(/<li>\s*\[ \]\s+/g, '<li class="task"><input type="checkbox" disabled> ')
                          .replace(/<li>\s*\[[xX]\]\s+/g, '<li class="task"><input type="checkbox" disabled checked> ');
               container.innerHTML = html;
+              window.__fitTables(container);
               var hs = container.querySelectorAll('h1,h2,h3,h4,h5,h6');
               for (var k = 0; k < hs.length; k++){
                 if(section.startSeq >= 0){ hs[k].id = 'h-' + (section.startSeq + k); }
@@ -849,8 +963,22 @@ final class MarkdownWebView: WKWebView {
             // 阅读进度持久化：每次章节切换写入 UserDefaults（恢复时 render() 读回注入页面）
             r.saveProgress(id)
         } else if message.name == "progress" {
-            guard let p = (message.body as? NSNumber)?.doubleValue, let r = renderer, r.readingProgress != p else { return }
-            r.readingProgress = p
+            guard let r = renderer else { return }
+            let progress: Double
+            let offset: Double
+            if let body = message.body as? [String: Any] {
+                guard let p = (body["progress"] as? NSNumber)?.doubleValue else { return }
+                progress = p
+                offset = (body["offset"] as? NSNumber)?.doubleValue ?? r.renderedScrollOffset
+            } else if let p = (message.body as? NSNumber)?.doubleValue {
+                progress = p
+                offset = r.renderedScrollOffset
+            } else {
+                return
+            }
+            r.updateRenderedScrollOffset(offset)
+            guard r.readingProgress != progress else { return }
+            r.readingProgress = progress
         }
     }
 

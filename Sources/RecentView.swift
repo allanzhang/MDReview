@@ -5,16 +5,18 @@ import AppKit
 /// 用 ScrollView + LazyVStack 自定义行（同 OutlineView，避免 List 行内交互缺陷）：
 /// 整行可点击（contentShape）、hover 轻量高亮。
 struct RecentView: View {
+    @ObservedObject private var doc = DocState.shared
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(DocState.shared.recent.enumerated()), id: \.element) { index, url in
+                ForEach(Array(doc.recent.enumerated()), id: \.element) { index, url in
                     RecentRow(
                         url: url,
                         isFirst: index == 0,
-                        isLast: index == DocState.shared.recent.count - 1
+                        isLast: index == doc.recent.count - 1
                     ) {
-                        DocState.shared.open(url)
+                        doc.open(url)
                     }
                 }
             }

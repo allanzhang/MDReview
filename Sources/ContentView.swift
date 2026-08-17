@@ -18,6 +18,10 @@ struct ContentView: View {
     @State private var isDropTargeted = false
     /// 当前文档字数（窗口副标题显示）。
     @State private var wordCount = 0
+    /// rendered 视图切换离开时暂存的进度/active 章节，切回时恢复。
+    @State private var renderedProgress: Double = 0
+    @State private var renderedActiveHeadingID: String?
+    @State private var renderedScrollOffset: Double = 0
 
     var body: some View {
         NavigationSplitView(columnVisibility: $doc.columnVisibility) {
@@ -45,6 +49,15 @@ struct ContentView: View {
         }
         // 外观切换：即时注入 JS 生效，不重载页面（保留滚动位置与渲染状态）
         .onChange(of: doc.appearance) { _, mode in renderer.applyAppearance(mode) }
+        // source / rendered 的进度、outline 高亮和滚动记忆分开管理。
+        // 离开 rendered 的快照必须在 showSource 改变前抓取（见 toggleSource），
+        // onChange 触发时 SourceView 已经写回 renderer，不能在这里回读。
+        .onChange(of: doc.showSource) { _, isSource in
+            guard !isSource else { return }
+            renderer.readingProgress = renderedProgress
+            renderer.activeHeadingID = renderedActiveHeadingID
+            renderer.restoreRenderedScrollOffset(renderedScrollOffset)
+        }
         .onAppear {
             DispatchQueue.main.async {
                 renderCurrent()
@@ -65,7 +78,7 @@ struct ContentView: View {
         case .openPanel: openPanel()
         case .toggleSidebar:
             doc.columnVisibility = (doc.columnVisibility == .all) ? .detailOnly : .all
-        case .toggleSource: withAnimation { doc.showSource.toggle() }
+        case .toggleSource: toggleSource()
         case .appearanceSystem: doc.appearance = .system
         case .appearanceLight: doc.appearance = .light
         case .appearanceDark: doc.appearance = .dark
@@ -76,6 +89,17 @@ struct ContentView: View {
         case .openRecent(let url): DocState.shared.open(url)
         case .clearRecent: DocState.shared.clearRecent()
         }
+    }
+
+    /// 切换源码/渲染前先抓取 rendered 的实时状态。onChange 阶段 SourceView
+    /// 已把 source 滚动写进 renderer，不能作为离开 rendered 的快照来源。
+    private func toggleSource() {
+        if !doc.showSource {
+            renderedProgress = renderer.readingProgress
+            renderedActiveHeadingID = renderer.activeHeadingID
+            renderedScrollOffset = renderer.renderedScrollOffset
+        }
+        withAnimation { doc.showSource.toggle() }
     }
 
     /// 启动时若未由 Finder 打开文件，则恢复上次文档（文件仍存在时）。
@@ -187,12 +211,17 @@ struct ContentView: View {
             }
             // 源码态：只读覆盖在 WebView 之上，保留渲染状态不卸载
             if doc.showSource && doc.url != nil {
-                SourceView(text: doc.rawText)
+                SourceView(text: doc.rawText,
+                           renderer: renderer,
+                           docName: doc.url?.lastPathComponent)
             }
         }
         .contextMenu {
             Button("Copy") { copySelection() }
             if doc.url != nil {
+                Button(doc.showSource ? "View Rendered" : "View Source") {
+                    toggleSource()
+                }
                 Divider()
                 Button("Reveal in Finder") { revealInFinder() }
                 Button("Open in External Editor") { openInExternalEditor() }
@@ -239,6 +268,25 @@ struct ContentView: View {
             Button { toggleSearch() } label: { Label("Search", systemImage: "magnifyingglass") }
                 .keyboardShortcut("f", modifiers: .command)
                 .help("Search in Document")
+        }
+        ToolbarItem(placement: .automatic) {
+            Button {
+                toggleSource()
+            } label: {
+                Image(systemName: doc.showSource ? "doc.richtext" : "doc.text")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(doc.showSource ? Color.white : Color.primary)
+                    .padding(6)
+                    .background {
+                        if doc.showSource {
+                            Circle().fill(Color.accentColor)
+                        }
+                    }
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help(doc.showSource ? "Show Rendered" : "Show Source")
+            .disabled(doc.url == nil)
         }
         // 外观切换：单按钮，图标表示点击后切换的方向——当前亮显月亮（点击切暗）、
         // 当前暗显太阳（点击切亮）。手动覆盖时 accent 圆高亮。
@@ -293,6 +341,10 @@ struct ContentView: View {
         renderer.searchCount = 0
         renderer.searchCurrent = 0
         renderer.readingProgress = 0
+        renderer.updateRenderedScrollOffset(0)
+        renderedProgress = 0
+        renderedActiveHeadingID = nil
+        renderedScrollOffset = 0
         searchText = ""
         renderer.render(doc.rawText, baseURL: url.deletingLastPathComponent(),
                         docName: url.lastPathComponent, appearance: doc.appearance)
@@ -546,18 +598,59 @@ private struct SidebarSegment: View {
 /// 布局开销极高。
 struct SourceView: View {
     let text: String
+    let renderer: MarkdownRenderer
+    let docName: String?
 
     var body: some View {
-        SourceTextView(text: text)
+        SourceTextView(text: text, renderer: renderer, docName: docName)
             .background(Color(nsColor: .textBackgroundColor))
     }
 }
 
-/// NSTextView 的 SwiftUI 包装：可滚动、可选中、等宽字体。
+/// NSTextView 的 SwiftUI 包装：可滚动、可选中、等宽字体；
+/// 独立维护源码视图的滚动进度、outline 同步和滚动位置记忆。
 struct SourceTextView: NSViewRepresentable {
     let text: String
+    let renderer: MarkdownRenderer
+    let docName: String?
+
+    func makeCoordinator() -> SourceTextCoordinator {
+        SourceTextCoordinator(renderer: renderer, docName: docName)
+    }
 
     func makeNSView(context: Context) -> NSScrollView {
+        context.coordinator.makeScrollView()
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        context.coordinator.update(scroll: scroll, text: text, docName: docName)
+    }
+}
+
+@MainActor
+final class SourceTextCoordinator: NSObject {
+    private let renderer: MarkdownRenderer
+    private weak var scrollView: NSScrollView?
+    private weak var textView: NSTextView?
+    private var docName: String?
+    private var currentText = ""
+    private var headings: [(id: String, range: NSRange)] = []
+    private var headingY: [String: CGFloat] = [:]
+    nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
+    private var lastSaveTime: TimeInterval = 0
+    private var restored = false
+
+    init(renderer: MarkdownRenderer, docName: String?) {
+        self.renderer = renderer
+        self.docName = docName
+        super.init()
+    }
+
+    deinit {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+
+    func makeScrollView() -> NSScrollView {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = true
@@ -573,14 +666,120 @@ struct SourceTextView: NSViewRepresentable {
         tv.isVerticallyResizable = true
         tv.isHorizontallyResizable = false
         tv.autoresizingMask = [.width]
-        tv.string = text
         scroll.documentView = tv
+
+        scrollView = scroll
+        textView = tv
+        scroll.contentView.postsBoundsChangedNotifications = true
+
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: NSView.boundsDidChangeNotification,
+                                            object: scroll.contentView,
+                                            queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleScroll() }
+        })
+        observers.append(center.addObserver(forName: .mdreviewSourceScroll,
+                                            object: nil,
+                                            queue: .main) { [weak self] note in
+            let id = note.object as? String
+            MainActor.assumeIsolated {
+                self?.scrollToHeading(id)
+            }
+        })
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let tv = scroll.documentView as? NSTextView else { return }
-        if tv.string != text { tv.string = text }
+    func update(scroll: NSScrollView, text: String, docName: String?) {
+        guard textView != nil else { return }
+        let docChanged = docName != self.docName
+        self.docName = docName
+        if text != currentText {
+            currentText = text
+            textView?.string = text
+            rebuildHeadings()
+        }
+        if docChanged || !restored {
+            restored = true
+            restoreScroll()
+        }
+    }
+
+    private func rebuildHeadings() {
+        guard let tv = textView, let layout = tv.layoutManager, let container = tv.textContainer else { return }
+        layout.ensureLayout(for: container)
+        headings = Self.parseHeadings(currentText)
+        headingY.removeAll()
+        for h in headings {
+            let glyphRange = layout.glyphRange(forCharacterRange: h.range, actualCharacterRange: nil)
+            guard glyphRange.location != NSNotFound else { continue }
+            let rect = layout.boundingRect(forGlyphRange: glyphRange, in: container)
+            headingY[h.id] = rect.minY
+        }
+    }
+
+    private static func parseHeadings(_ text: String) -> [(id: String, range: NSRange)] {
+        let ns = text as NSString
+        var result: [(String, NSRange)] = []
+        var inFence = false
+        var seq = 0
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length), options: .byLines) { line, lineRange, _, _ in
+            let s = line ?? ""
+            if s.range(of: "^\\s*```", options: .regularExpression) != nil { inFence.toggle() }
+            guard !inFence else { return }
+            let match = ns.range(of: "^(#{1,6})\\s+(.+)$", options: .regularExpression, range: lineRange)
+            if match.location != NSNotFound {
+                result.append(("h-\(seq)", match))
+                seq += 1
+            }
+        }
+        return result
+    }
+
+    private func restoreScroll() {
+        guard let scroll = scrollView, let name = docName,
+              let offset = MarkdownRenderer.savedSourceScrollOffset(for: name) else { return }
+        let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: min(offset, maxY)))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        handleScroll()
+    }
+
+    private func scrollToHeading(_ id: String?) {
+        guard let id else { return }
+        guard let tv = textView, let layout = tv.layoutManager, let container = tv.textContainer,
+              let h = headings.first(where: { $0.id == id }) else { return }
+        layout.ensureLayout(for: container)
+        let glyphRange = layout.glyphRange(forCharacterRange: h.range, actualCharacterRange: nil)
+        guard glyphRange.location != NSNotFound else { return }
+        let rect = layout.boundingRect(forGlyphRange: glyphRange, in: container)
+        guard let scroll = scrollView else { return }
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, rect.minY - 20)))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        handleScroll()
+    }
+
+    private func handleScroll() {
+        guard let scroll = scrollView else { return }
+        let visible = scroll.contentView.bounds
+        let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - visible.height)
+        let progress = maxY > 0 ? min(1, max(0, visible.minY / maxY)) : 0
+        renderer.readingProgress = progress
+
+        let midY = visible.minY + 60
+        var active = headings.first?.id
+        for h in headings {
+            if let y = headingY[h.id], y <= midY { active = h.id }
+        }
+        if let active, active != renderer.activeHeadingID {
+            renderer.activeHeadingID = active
+        }
+
+        guard docName != nil else { return }
+        let now = Date().timeIntervalSince1970
+        if now - lastSaveTime > 0.25 {
+            lastSaveTime = now
+            renderer.saveSourceScrollOffset(visible.minY)
+        }
     }
 }
 

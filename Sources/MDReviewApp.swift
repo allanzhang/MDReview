@@ -93,6 +93,7 @@ enum MenuAction {
 
 extension Notification.Name {
     static let mdreviewMenuAction = Notification.Name("mdreview.menuAction")
+    static let mdreviewSourceScroll = Notification.Name("mdreview.sourceScroll")
 }
 
 private func postMenuAction(_ action: MenuAction) {

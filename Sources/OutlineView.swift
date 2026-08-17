@@ -9,26 +9,42 @@ import AppKit
 /// 3. 自定义行可精确控制整行点击（contentShape）与 hover 反馈，点击即时可靠。
 struct OutlineView: View {
     @ObservedObject var renderer: MarkdownRenderer
+    @EnvironmentObject private var doc: DocState
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(renderer.outline.enumerated()), id: \.element.id) { index, h in
-                    OutlineRow(
-                        heading: h,
-                        isActive: h.id == renderer.activeHeadingID,
-                        indent: CGFloat((h.level - 1) * 14),
-                        isFirst: index == 0,
-                        isLast: index == renderer.outline.count - 1,
-                        action: { renderer.scrollTo(h.id) }
-                    )
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(renderer.outline.enumerated()), id: \.element.id) { index, h in
+                        OutlineRow(
+                            heading: h,
+                            isActive: h.id == renderer.activeHeadingID,
+                            indent: CGFloat((h.level - 1) * 14),
+                            isFirst: index == 0,
+                            isLast: index == renderer.outline.count - 1,
+                            action: {
+                                if doc.showSource {
+                                    NotificationCenter.default.post(name: .mdreviewSourceScroll, object: h.id)
+                                } else {
+                                    renderer.scrollTo(h.id)
+                                }
+                            }
+                        )
+                    }
+                }
+                // 容器留边：让首尾项圆角有呼吸空间
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+            }
+            .navigationTitle("Outline")
+            // 渲染视图滚动到新章节时，大纲列表自动滚到当前项，保持双向同步
+            .onChange(of: renderer.activeHeadingID) { _, id in
+                guard let id else { return }
+                withAnimation(.easeOut(duration: 0.12)) {
+                    proxy.scrollTo(id, anchor: .center)
                 }
             }
-            // 容器留边：让首尾项圆角有呼吸空间
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
         }
-        .navigationTitle("Outline")
     }
 }
 
@@ -62,7 +78,7 @@ private struct OutlineRow: View {
                 .lineLimit(2)
                 .truncationMode(.tail)
                 .font(.system(size: 13, weight: isActive ? .semibold : .regular))
-                .foregroundStyle(isActive ? Color.primary : (heading.level > 1 ? Color.secondary : Color.primary))
+                .foregroundStyle(isActive ? Color.primary.opacity(0.78) : (heading.level > 1 ? Color.secondary : Color.primary))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 6)
                 .padding(.leading, 10 + indent)
