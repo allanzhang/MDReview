@@ -754,10 +754,12 @@ final class MarkdownWebView: WKWebView {
                 if(P.deflist){ window.__mdit.use(P.deflist); }
               } catch(e){}
             }
-            // —— CJK 标点粗体兜底：标准 markdown-it 会把「」等当作标点边界，
-            // 导致 **「...」** 无法开/闭强调。这里不改解析规则，只对标准解析后
-            // 残留在 text token 里的 **...** 做最小修复，且仅当内容首尾是 CJK 标点。
-            var cjkPunct = /[\u3000-\u303F\uFF01-\uFF5E\u2018\u2019\u201C\u201D\u3008-\u3011]/;
+            // —— CJK 标点粗体兜底：标准 markdown-it 把引号等标点当作 flanking 边界，
+            // 导致 **「...」**、**"..."** 无法开/闭强调（直引号在 CJK 语境下 smartquotes
+            // 也不会转换）。这里不改解析规则，只对标准解析后残留在 text token 里的
+            // **...** 做最小修复：仅当内容首/尾是引号类标点（含 ASCII 直引号）时加粗；
+            // 不匹配的一对整体原样跳过，避免与后续 ** 错配；普通文本统一走 HTML 转义。
+            var cjkPunct = /[\u3000-\u303F\uFF01-\uFF5E\u0022\u0027\u00AB\u00BB\u2018\u2019\u201C\u201D\u201E\u201F\u3008-\u3011]/;
             var defaultTextRender = window.__mdit.renderer.rules.text || function(tokens, idx, options, env, self){
               return window.__mdit.utils.escapeHtml(tokens[idx].content);
             };
@@ -765,7 +767,9 @@ final class MarkdownWebView: WKWebView {
               var content = tokens[idx].content;
               if (content.indexOf('**') < 0) { return defaultTextRender(tokens, idx, options, env, self); }
               var out = '';
+              var buf = '';
               var i = 0;
+              function flushBuf(){ if (buf) { out += window.__mdit.utils.escapeHtml(buf); buf = ''; } }
               while (i < content.length){
                 if (content[i] === '*' && content[i + 1] === '*'){
                   var end = content.indexOf('**', i + 2);
@@ -773,15 +777,19 @@ final class MarkdownWebView: WKWebView {
                     var inner = content.slice(i + 2, end);
                     if (inner && inner.indexOf('\n') < 0 &&
                         (cjkPunct.test(inner.charAt(0)) || cjkPunct.test(inner.charAt(inner.length - 1)))){
+                      flushBuf();
                       out += '<strong>' + window.__mdit.utils.escapeHtml(inner) + '</strong>';
-                      i = end + 2;
-                      continue;
+                    } else {
+                      buf += content.slice(i, end + 2);
                     }
+                    i = end + 2;
+                    continue;
                   }
                 }
-                out += content[i];
+                buf += content[i];
                 i++;
               }
+              flushBuf();
               return out;
             };
             // —— 数学公式（$...$ / $$...$$）：在 markdown-it 其他行内规则前拦截，避免
