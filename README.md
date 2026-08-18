@@ -7,7 +7,7 @@ SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读�
 ## 运行方式
 - 打开 `MDReview.xcodeproj` → Xcode 里 `Cmd+R` 即可运行（已 ad-hoc 签名，本机直接跑）。
 - 工程由 `project.yml` + `xcodegen` 生成（`brew install xcodegen` 后 `xcodegen generate`）。
-- 想常驻：`xcodebuild -configuration Release` 构建一份，拖进「应用程序」文件夹。
+- 想常驻：直接下载 [Releases](https://github.com/allanzhang/MDReview/releases) 附件里的 `MDReview-<版本>.zip`，解压拖进「应用程序」文件夹；或 `xcodebuild -configuration Release` 自己构建一份。
 
 ## 打开文件
 - 工具栏「打开」或 **File > Open…**（`Cmd+O`，`NSOpenPanel`）
@@ -62,6 +62,11 @@ SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读�
 - **阅读进度条**：内容区顶部渐变胶囊进度条，带轻微阴影和动画
 - **空状态引导页**（大 Open 按钮）、窗口标题显示文件名 + 目录 + 字数、拖拽高亮
 - **App 图标**：标准 Assets.xcassets（16~512 @1x/@2x 全尺寸集）
+
+## 发布流程
+1. 版本号三处同步：`CHANGELOG.md`（日期 + 条目）、`Sources/Info.plist`、`project.yml`（xcodegen 会回写 Info.plist，漏改会被打回旧版本）
+2. commit → `git tag -a v<x.y.z>` → `git push origin main && git push origin v<x.y.z>`
+3. `gh release create v<x.y.z>` 发布 notes（取自 CHANGELOG 对应段），并附应用包资产：Release 配置构建后 `ditto -c -k --keepParent MDReview.app MDReview-<x.y.z>.zip`，`gh release upload` 上传
 
 ## 工程结构
 ```
