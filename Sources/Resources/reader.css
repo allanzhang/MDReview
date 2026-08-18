@@ -41,16 +41,16 @@ body {
   font-size: 0.88em;
   font-weight: 500;
   color: #24292e;
-  background: #e3ebf7;
+  background: #e5e8eb;
   padding: 0.15em 0.4em;
   border-radius: 5px;
 }
 #content pre {
-  background: #eef3fb;
+  background: #e7eaed;
   padding: 0;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid #e8eaed;
+  border: 1px solid #d8dce0;
 }
 #content pre.code-block {
   display: grid;
@@ -63,9 +63,9 @@ body {
   content: attr(data-lang);
   grid-column: 1 / -1;
   padding: 8px 14px;
-  background: #e7eef9;
-  border-bottom: 1px solid #e8eaed;
-  color: #6b7280;
+  background: #dfe3e7;
+  border-bottom: 1px solid #d8dce0;
+  color: #606874;
   font-size: 0.72em;
   font-weight: 600;
   text-transform: uppercase;
@@ -76,9 +76,9 @@ body {
   padding: 14px 10px 14px 0;
   min-width: 38px;
   text-align: right;
-  color: #b0b7c3;
-  background: #e7eef9;
-  border-right: 1px solid #e8eaed;
+  color: #767e88;
+  background: #dfe3e7;
+  border-right: 1px solid #d8dce0;
   font-family: Consolas, "SF Mono", ui-monospace, Menlo, monospace;
   font-size: 0.8em;
   line-height: 1.7;
@@ -247,36 +247,37 @@ mark.srch-cur { background: #ffb703; color: #1f2328; }
 #content pre code.hljs { background: transparent; padding: 0; }
 
 /* 暗色主题：由 JS 根据外观模式（跟随系统/强制亮/强制暗）控制 body.theme-dark class。
-   调色参考 VS Code「Dark Modern」：背景 #1f1f1f、正文 #cccccc，避免纯黑/发蓝发紫。 */
-body.theme-dark { background: #1f1f1f; color: #d1d5db; }
-body.theme-dark #content h1, body.theme-dark #content h2 { border-color: #333333; }
+   中性灰、比 VS Code Dark Modern 提亮一档（背景 #262626、正文 #d8d8d8），
+   代码块容器与浅色模式镜像对称：比页面背景沉一档（#1d1d1d），层级清晰。 */
+body.theme-dark { background: #262626; color: #d8d8d8; }
+body.theme-dark #content h1, body.theme-dark #content h2 { border-color: #3a3a3a; }
 body.theme-dark #content h1, body.theme-dark #content h2,
 body.theme-dark #content h3, body.theme-dark #content h4,
-body.theme-dark #content h5, body.theme-dark #content h6 { color: #e6e6e6; }
+body.theme-dark #content h5, body.theme-dark #content h6 { color: #ececec; }
 body.theme-dark #content a { color: #75beff; }
-body.theme-dark #content code { background: #263246; }
-body.theme-dark #content code { color: #e5e7eb; }
-body.theme-dark #content pre { background: #1d2635; border-color: #39485c; }
+body.theme-dark #content code { background: #404040; }
+body.theme-dark #content code { color: #e6e6e6; }
+body.theme-dark #content pre { background: #1d1d1d; border-color: #3d3d3d; }
 body.theme-dark #content pre.code-block::before,
-body.theme-dark #content pre.code-block .code-gutter { background: #212c3e; border-color: #39485c; color: #7c8490; }
-body.theme-dark #content pre.code-block .code-copy { background: #2a2a2a; border-color: #3a3a3a; color: #a0a6ad; }
-body.theme-dark #content pre.code-block .code-copy:hover { background: #333333; color: #ffffff; }
-body.theme-dark #content blockquote { background: #262626; border-color: #333333; color: #a0a6ad; }
-body.theme-dark #content table { border-color: #333333; }
-body.theme-dark #content th, body.theme-dark #content td { border-color: #333333; }
-body.theme-dark #content thead th { background: #262626; }
-body.theme-dark #content tbody tr:hover td { background: #2a2a2a; }
-body.theme-dark #content ul li.task input[type="checkbox"] { background: #2a2a2a; border-color: #4b5563; }
-body.theme-dark #content ul li.task input[type="checkbox"]:checked { background: #3a3a3a; border-color: #555555; }
-body.theme-dark #content ul li.task input[type="checkbox"]:checked::after { border-color: #a0a6ad; }
-body.theme-dark #content ul li.task::before { background: #d1d5db; }
-body.theme-dark #content hr { border-color: #333333; }
-body.theme-dark #content .footnotes { color: #999999; }
-body.theme-dark #content .footnotes-sep { border-color: #333333; }
+body.theme-dark #content pre.code-block .code-gutter { background: #242424; border-color: #3d3d3d; color: #8a8a8a; }
+body.theme-dark #content pre.code-block .code-copy { background: #323232; border-color: #3f3f3f; color: #a8a8a8; }
+body.theme-dark #content pre.code-block .code-copy:hover { background: #3b3b3b; color: #ffffff; }
+body.theme-dark #content blockquote { background: #2e2e2e; border-color: #3a3a3a; color: #a8a8a8; }
+body.theme-dark #content table { border-color: #3a3a3a; }
+body.theme-dark #content th, body.theme-dark #content td { border-color: #3a3a3a; }
+body.theme-dark #content thead th { background: #2e2e2e; }
+body.theme-dark #content tbody tr:hover td { background: #323232; }
+body.theme-dark #content ul li.task input[type="checkbox"] { background: #323232; border-color: #565656; }
+body.theme-dark #content ul li.task input[type="checkbox"]:checked { background: #414141; border-color: #5e5e5e; }
+body.theme-dark #content ul li.task input[type="checkbox"]:checked::after { border-color: #a8a8a8; }
+body.theme-dark #content ul li.task::before { background: #d8d8d8; }
+body.theme-dark #content hr { border-color: #3a3a3a; }
+body.theme-dark #content .footnotes { color: #9c9c9c; }
+body.theme-dark #content .footnotes-sep { border-color: #3a3a3a; }
 body.theme-dark ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); }
 body.theme-dark ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); }
 body.theme-dark mark.srch { background: #9e7b00; color: #fff; }
-body.theme-dark mark.srch-cur { background: #ffb703; color: #1f1f1f; }
+body.theme-dark mark.srch-cur { background: #ffb703; color: #262626; }
 body.theme-dark #content ::selection { background: #264f78; }
 
 /* 打印 / PDF 导出：强制浅色底，避免暗色主题耗墨；控制分页断点 */

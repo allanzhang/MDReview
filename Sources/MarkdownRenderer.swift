@@ -407,8 +407,8 @@ final class MarkdownWebView: WKWebView {
     /// 滚动 / 搜索 / 正则转义等工具函数（不含渲染，渲染见 jsRenderInline）。
     /// 使用原始字符串保留正则中的反斜杠。
     private static let jsFunctions = #"""
-    // 大纲点击跳转：用瞬时滚动（不用 smooth，避免动画期间持续触发滚动/布局查询）。
-    // 分块懒渲染模式下目标标题可能尚未渲染：先渲染到目标所在段再滚动。
+    // 大纲点击跳转：平滑滚动（产品要求）；期间短暂锁定 active，防止滚动动画把
+    // 刚点击的选中抢走。分块懒渲染模式下目标标题可能尚未渲染：先渲染到目标所在段再滚动。
     window.scrollToHeading = function(id){
       var e = document.getElementById(id);
       if(!e && window.__sections){
@@ -426,10 +426,11 @@ final class MarkdownWebView: WKWebView {
       if(e){
         // 用同一套实时坐标计算，避免 outline 跳转和 active 高亮各算各的。
         if(window.__recomputeHeads){ window.__recomputeHeads(); }
-        // 程序化滚动短暂锁定 active，避免滚动事件把刚点击的选中抢走。
-        window.__programmaticActiveUntil = Date.now() + 400;
+        // 程序化滚动短暂锁定 active；平滑动画较长时（超过锁定期）允许中间章节
+        // 接管高亮，与正文实际经过位置保持一致，最终落点仍会由滚动事件校正。
+        window.__programmaticActiveUntil = Date.now() + 500;
         var y = e.getBoundingClientRect().top + (window.scrollY || 0) - 20;
-        window.scrollTo(0, Math.max(0, y));
+        window.scrollTo({top: Math.max(0, y), behavior: 'smooth'});
         if(window.__onScroll){ window.__onScroll(); }
       }
     };
@@ -700,7 +701,7 @@ final class MarkdownWebView: WKWebView {
       document.documentElement.classList.toggle('theme-dark', dark);
       document.body.classList.toggle('theme-dark', dark);
       document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-      document.documentElement.style.background = dark ? '#0d1117' : '#ffffff';
+      document.documentElement.style.background = dark ? '#262626' : '#ffffff';
       // Mermaid SVG 颜色在渲染时写死，切主题必须按新主题重绘，
       // 否则图表停留在旧主题、与页面其它部分割裂。
       // 源文本在首次渲染时存入 pre[data-mermaid-src]，这里直接重渲染替换。

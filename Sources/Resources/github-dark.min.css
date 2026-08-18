@@ -1,17 +1,18 @@
 body.theme-dark pre code.hljs{display:block;overflow-x:auto;padding:1em}
 body.theme-dark code.hljs{padding:3px 5px}
-/* Atom One Dark */
-body.theme-dark .hljs{color:#abb2bf;background:#282c34}
-body.theme-dark .hljs-comment,body.theme-dark .hljs-quote{color:#5c6370;font-style:italic}
-body.theme-dark .hljs-doctag,body.theme-dark .hljs-keyword,body.theme-dark .hljs-template-tag,body.theme-dark .hljs-template-variable,body.theme-dark .hljs-type,body.theme-dark .hljs-variable.language_{color:#c678dd}
-body.theme-dark .hljs-title,body.theme-dark .hljs-title.class_,body.theme-dark .hljs-title.class_.inherited__,body.theme-dark .hljs-title.function_{color:#61afef}
-body.theme-dark .hljs-attr,body.theme-dark .hljs-attribute,body.theme-dark .hljs-literal,body.theme-dark .hljs-meta,body.theme-dark .hljs-number,body.theme-dark .hljs-operator,body.theme-dark .hljs-selector-attr,body.theme-dark .hljs-selector-class,body.theme-dark .hljs-selector-id,body.theme-dark .hljs-variable{color:#d19a66}
-body.theme-dark .hljs-meta .hljs-string,body.theme-dark .hljs-regexp,body.theme-dark .hljs-string{color:#98c379}
-body.theme-dark .hljs-built_in,body.theme-dark .hljs-symbol{color:#e5c07b}
-body.theme-dark .hljs-name,body.theme-dark .hljs-selector-pseudo,body.theme-dark .hljs-selector-tag{color:#98c379}
-body.theme-dark .hljs-section{color:#61afef;font-weight:700}
-body.theme-dark .hljs-bullet{color:#d19a66}
-body.theme-dark .hljs-addition{color:#98c379;background-color:#2c3a2f}
-body.theme-dark .hljs-deletion{color:#e06c75;background-color:#3a2a2e}
-body.theme-dark .hljs-emphasis{color:#abb2bf;font-style:italic}
-body.theme-dark .hljs-strong{color:#abb2bf;font-weight:700}
+/* MDReview 统一调色板 · 深色：与浅色模式同色相、提亮降饱和的柔和变体。
+   全部 token 对 #1d1d1d 容器背景对比度 ≥ 5.2:1 */
+body.theme-dark .hljs{color:#c9cfd6}
+body.theme-dark .hljs-comment,body.theme-dark .hljs-quote{color:#8b9098;font-style:italic}
+body.theme-dark .hljs-doctag,body.theme-dark .hljs-keyword,body.theme-dark .hljs-template-tag,body.theme-dark .hljs-template-variable,body.theme-dark .hljs-type,body.theme-dark .hljs-variable.language_{color:#82aede}
+body.theme-dark .hljs-title,body.theme-dark .hljs-title.class_,body.theme-dark .hljs-title.class_.inherited__,body.theme-dark .hljs-title.function_{color:#b193d9}
+body.theme-dark .hljs-attr,body.theme-dark .hljs-attribute,body.theme-dark .hljs-literal,body.theme-dark .hljs-meta,body.theme-dark .hljs-number,body.theme-dark .hljs-operator,body.theme-dark .hljs-selector-attr,body.theme-dark .hljs-selector-class,body.theme-dark .hljs-selector-id,body.theme-dark .hljs-variable{color:#d4a76a}
+body.theme-dark .hljs-meta .hljs-string,body.theme-dark .hljs-regexp,body.theme-dark .hljs-string{color:#93c89e}
+body.theme-dark .hljs-built_in,body.theme-dark .hljs-symbol{color:#d4a76a}
+body.theme-dark .hljs-name,body.theme-dark .hljs-selector-pseudo,body.theme-dark .hljs-selector-tag{color:#93c89e}
+body.theme-dark .hljs-section{color:#82aede;font-weight:700}
+body.theme-dark .hljs-bullet{color:#d4a76a}
+body.theme-dark .hljs-addition{color:#93c89e;background-color:#24352a}
+body.theme-dark .hljs-deletion{color:#e0a18f;background-color:#3a2b26}
+body.theme-dark .hljs-emphasis{font-style:italic}
+body.theme-dark .hljs-strong{font-weight:700}

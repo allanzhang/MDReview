@@ -1,17 +1,18 @@
 pre code.hljs{display:block;overflow-x:auto;padding:1em}
 code.hljs{padding:3px 5px}
-/* Atom One Light */
-.hljs{color:#383a42;background:#fafafa}
-.hljs-comment,.hljs-quote{color:#a0a1a7;font-style:italic}
-.hljs-doctag,.hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#a626a4}
-.hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#4078f2}
-.hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id,.hljs-variable{color:#986801}
-.hljs-meta .hljs-string,.hljs-regexp,.hljs-string{color:#50a14f}
-.hljs-built_in,.hljs-symbol{color:#c18401}
-.hljs-name,.hljs-selector-pseudo,.hljs-selector-tag{color:#22863a}
-.hljs-section{color:#4078f2;font-weight:700}
-.hljs-bullet{color:#735c0f}
-.hljs-addition{color:#22863a;background-color:#f0fff4}
-.hljs-deletion{color:#b31d28;background-color:#ffeef0}
-.hljs-emphasis{color:#383a42;font-style:italic}
-.hljs-strong{color:#383a42;font-weight:700}
+/* MDReview 统一调色板 · 浅色：蓝=关键字 / 绿=字符串与标签 / 琥珀=数字常量 / 紫=函数类型 / 灰=注释。
+   与深色模式为同一组色相的明暗变体；全部 token 对 #e7eaed 容器背景对比度 ≥ 4.5:1 */
+.hljs{color:#24292f}
+.hljs-comment,.hljs-quote{color:#606874;font-style:italic}
+.hljs-doctag,.hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#2e5fa3}
+.hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#6f47a8}
+.hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id,.hljs-variable{color:#8a5a00}
+.hljs-meta .hljs-string,.hljs-regexp,.hljs-string{color:#2f6b45}
+.hljs-built_in,.hljs-symbol{color:#8a5a00}
+.hljs-name,.hljs-selector-pseudo,.hljs-selector-tag{color:#2f6b45}
+.hljs-section{color:#2e5fa3;font-weight:700}
+.hljs-bullet{color:#8a5a00}
+.hljs-addition{color:#2f6b45;background-color:#e8f3ec}
+.hljs-deletion{color:#a63d2f;background-color:#f7e8e4}
+.hljs-emphasis{font-style:italic}
+.hljs-strong{font-weight:700}

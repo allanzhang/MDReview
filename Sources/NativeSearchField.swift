@@ -70,8 +70,14 @@ struct NativeSearchField: NSViewRepresentable {
         }
 
         @objc func searchFieldAction(_ sender: NSSearchField) {
-            if sender.stringValue.isEmpty {
+            // × 取消按钮：AppKit 只发送 action、不自动清文本，需主动清空；
+            // 用事件类型区分 × 点击（鼠标）与键入触发的 action（键盘），避免误清输入
+            let isMouseClick = NSApp.currentEvent.map {
+                $0.type == .leftMouseUp || $0.type == .leftMouseDown
+            } ?? false
+            if isMouseClick || sender.stringValue.isEmpty {
                 parent.text = ""
+                sender.stringValue = ""
             }
         }
 

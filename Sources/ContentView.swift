@@ -32,6 +32,8 @@ struct ContentView: View {
             detailContent
         }
         .navigationSplitViewStyle(.balanced)
+        // 工具栏不透明实底，去掉半透明玻璃材质：与侧栏实底统一，厚实清晰（Codex 式）
+        .toolbarBackground(Color(nsColor: .windowBackgroundColor), for: .windowToolbar)
         // 工具栏下边界层次：light 下用顶部柔和渐变阴影（工具栏向下投射的光晕）增强层次；
         // dark 系统自带边界清晰，保持不动
         .overlay(alignment: .top) {
@@ -196,16 +198,10 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebar: some View {
         VStack(spacing: 0) {
-            // 视图切换：两个大按钮（图标 + 文字），无自绘底座/描边
-            HStack(spacing: 4) {
-                SidebarSegment(title: "Outline", systemImage: "list.bullet",
-                               isSelected: doc.showOutline) { doc.showOutline = true }
-                SidebarSegment(title: "Recent", systemImage: "clock",
-                               isSelected: !doc.showOutline) { doc.showOutline = false }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            Divider()
+            // 视图切换：中性灰轨道 + 实底滑块（无 accent 蓝），与大纲灰底选中同一语言
+            SidebarSwitcher(showOutline: $doc.showOutline)
+                .padding(.horizontal, 8)
+                .padding(.top, 8)
             if doc.showOutline {
                 OutlineView(renderer: renderer)
             } else {
@@ -216,14 +212,9 @@ struct ContentView: View {
         .toolbar(removing: .sidebarToggle)
         // 侧栏最小宽度：防 Outline/History 按钮文字换行（拉到最窄也不难看）
         .navigationSplitViewColumnWidth(min: 200, ideal: 250)
-        // 侧栏层次感：light 下叠实背景与内容区明确分界（sidebar 系统材质在 light 下太透）
-        .background {
-            if systemScheme == .dark {
-                Color.clear
-            } else {
-                Color(nsColor: .windowBackgroundColor).opacity(0.55)
-            }
-        }
+        // 侧栏用不透明实底（系统 windowBackgroundColor，light/dark 自动适配），
+        // 不用系统 sidebar 玻璃材质：厚实、边界清晰，与内容区明确分界
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     @ViewBuilder
@@ -618,38 +609,6 @@ private struct ExportSuccessPanel: View {
     }
 }
 
-/// 侧边栏视图切换按钮：图标 + 文字，选中态 accent 高亮，均分拉宽、垂直拉长。
-private struct SidebarSegment: View {
-    let title: String
-    let systemImage: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    @Environment(\.colorScheme) private var scheme
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 12, weight: .medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 7).fill(Color.accentColor)
-            } else if isHovering {
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(scheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.06))
-            }
-        }
-        .foregroundStyle(isSelected ? Color.white : Color.primary)
-        .animation(.easeOut(duration: 0.12), value: isSelected)
-        .onHover { isHovering = $0 }
-    }
-}
 
 /// 源码视图：只读展示当前 Markdown 原文。
 /// 用 NSTextView（AppKit 文本系统）承载而非 SwiftUI Text——后者渲染 MB 级大文本时
@@ -826,7 +785,7 @@ final class SourceTextCoordinator: NSObject {
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let textColor: NSColor = (dark ? NSColor.white : NSColor.black).withAlphaComponent(0.82)
         let background: NSColor = dark
-            ? NSColor(calibratedWhite: 0.1216, alpha: 1)
+            ? NSColor(calibratedWhite: 0.149, alpha: 1)
             : NSColor.white
         tv.textColor = textColor
         tv.backgroundColor = background
@@ -893,9 +852,17 @@ final class SourceTextCoordinator: NSObject {
         let rect = layout.boundingRect(forGlyphRange: glyphRange, in: container)
         guard let scroll = scrollView else { return }
         programmaticActiveUntil = Date().timeIntervalSince1970 + 0.4
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, rect.minY - 20)))
-        scroll.reflectScrolledClipView(scroll.contentView)
-        handleScroll()
+        let target = NSPoint(x: 0, y: max(0, rect.minY - 20))
+        // 大纲点击统一平滑滚动（与渲染视图一致），动画结束再同步 scroller 与高亮
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.25
+            scroll.contentView.animator().setBoundsOrigin(target)
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                scroll.reflectScrolledClipView(scroll.contentView)
+                self?.handleScroll()
+            }
+        }
     }
 
     private func search(_ term: String) {
@@ -965,6 +932,45 @@ final class SourceTextCoordinator: NSObject {
         if now - lastSaveTime > 0.25 {
             lastSaveTime = now
             renderer.saveSourceScrollOffset(visible.minY)
+        }
+    }
+}
+
+/// Outline / Recent 切换器：中性灰轨道 + 实底滑块，不使用 accent 蓝，
+/// 与侧栏大纲的灰底选中保持同一克制语言（Codex 式）。
+private struct SidebarSwitcher: View {
+    @Binding var showOutline: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(spacing: 0) {
+            segment("Outline", isSelected: showOutline) { showOutline = true }
+            segment("Recent", isSelected: !showOutline) { showOutline = false }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(scheme == .dark ? Color.black.opacity(0.30) : Color.black.opacity(0.06))
+        )
+    }
+
+    private func segment(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(scheme == .dark ? Color(white: 0.29) : Color.white)
+                    .shadow(color: Color.black.opacity(scheme == .dark ? 0.30 : 0.10),
+                            radius: 1, x: 0, y: 0.5)
+            }
         }
     }
 }
