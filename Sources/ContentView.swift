@@ -261,7 +261,7 @@ struct ContentView: View {
         }
         .overlay(alignment: .topLeading) {
             // 阅读进度条：独立子视图观察 renderer，进度变化时精准重绘
-            ReadingProgressBar(renderer: renderer)
+            ReadingProgressBar(renderer: renderer, isDark: isDarkEffective)
         }
         .onChange(of: searchText) { _, newValue in
             // 防抖：连续输入不触发搜索，停顿 250ms 后执行一次（避免大文档全文遍历打满 WebContent）
@@ -556,22 +556,23 @@ private struct WindowFrameAutosave: NSViewRepresentable {
 /// （避免滚动高频重算整树），进度变化只重绘这一条。
 private struct ReadingProgressBar: View {
     @ObservedObject var renderer: MarkdownRenderer
+    let isDark: Bool
+
+    /// 中性灰进度条：无渐变无光晕，贴合原生质感。浅色 #c5cad3 / 深色 #525252，
+    /// 在各自页面底色（#ffffff / #262626）上可见但不抢眼。
+    private var barColor: Color {
+        isDark ? Color(red: 82/255, green: 82/255, blue: 82/255)
+               : Color(red: 197/255, green: 202/255, blue: 211/255)
+    }
 
     var body: some View {
         GeometryReader { geo in
             Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [Color.accentColor, Color.accentColor.opacity(0.55)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: max(0, geo.size.width * renderer.readingProgress), height: 3)
-                .shadow(color: Color.accentColor.opacity(0.25), radius: 2, y: 1)
+                .fill(barColor)
+                .frame(width: max(0, geo.size.width * renderer.readingProgress), height: 2)
                 .animation(.easeOut(duration: 0.12), value: renderer.readingProgress)
         }
-        .frame(height: 3)
+        .frame(height: 2)
         .allowsHitTesting(false)
     }
 }
