@@ -754,43 +754,49 @@ final class MarkdownWebView: WKWebView {
                 if(P.deflist){ window.__mdit.use(P.deflist); }
               } catch(e){}
             }
-            // —— CJK 标点粗体兜底：标准 markdown-it 把引号等标点当作 flanking 边界，
-            // 导致 **「...」**、**"..."** 无法开/闭强调（直引号在 CJK 语境下 smartquotes
-            // 也不会转换）。这里不改解析规则，只对标准解析后残留在 text token 里的
-            // **...** 做最小修复：仅当内容首/尾是引号类标点（含 ASCII 直引号）时加粗；
-            // 不匹配的一对整体原样跳过，避免与后续 ** 错配；普通文本统一走 HTML 转义。
-            var cjkPunct = /[\u3000-\u303F\uFF01-\uFF5E\u0022\u0027\u00AB\u00BB\u2018\u2019\u201C\u201D\u201E\u201F\u3008-\u3011]/;
+            // —— 标点粗体兜底：标准 markdown-it 把引号等标点当作 flanking 边界，导致
+            // **「...」**、**"..."**、**……** 等无法开/闭强调（直引号在 CJK 语境下
+            // smartquotes 也不会转换）。这里不改解析规则，只对标准解析后残留在 text
+            // token 里的 **...** 做修复：仅当内容首/尾是「会阻断强调的标点」时加粗。
+            // 字符集为实验推导的 CommonMark 阻断强调字符全集（剔除空白类，避免误伤
+            // 空格分隔的裸星号）；不匹配的一对整体原样跳过，避免与后续 ** 错配；
+            // 普通文本统一 HTML 转义；任何异常回退默认渲染（显示源码），保证不崩溃。
+            var punctBoundary = /[\u0021-\u0029\u002B-\u002F\u003A-\u0040\u005B-\u0060\u007B-\u007E\u00A1-\u00A9\u00AB\u00AC\u00AE-\u00B1\u00B4\u00B6-\u00B8\u00BB\u00BF\u00D7\u00F7\u2010-\u2027\u2030-\u205E\u207A-\u207E\u208A-\u208E\u20A0-\u20C0\u2100-\u2101\u2103-\u2106\u2108\u2109\u2114\u2116-\u2118\u211E-\u2123\u2125\u2127\u2129\u212E\u213A\u213B\u2140-\u2144\u214A-\u214D\u214F\u218A\u218B\u2190-\u2426\u2440-\u244A\u249C-\u24E9\u2500-\u2775\u2794-\u2B73\u2B76-\u2B95\u2B97-\u2BFF\u2E00-\u2E2E\u2E30-\u2E5D\u3001-\u3004\u3008-\u3020\u3030\u3036\u3037\u303D-\u303F\u309B\u309C\u30A0\u30FB\uFE30-\uFE4F\uFF01-\uFF0F\uFF1A-\uFF20\uFF3B-\uFF40\uFF5B-\uFF65\uFFE0-\uFFE6]/;
             var defaultTextRender = window.__mdit.renderer.rules.text || function(tokens, idx, options, env, self){
               return window.__mdit.utils.escapeHtml(tokens[idx].content);
             };
             window.__mdit.renderer.rules.text = function(tokens, idx, options, env, self){
               var content = tokens[idx].content;
               if (content.indexOf('**') < 0) { return defaultTextRender(tokens, idx, options, env, self); }
-              var out = '';
-              var buf = '';
-              var i = 0;
-              function flushBuf(){ if (buf) { out += window.__mdit.utils.escapeHtml(buf); buf = ''; } }
-              while (i < content.length){
-                if (content[i] === '*' && content[i + 1] === '*'){
-                  var end = content.indexOf('**', i + 2);
-                  if (end >= 0){
-                    var inner = content.slice(i + 2, end);
-                    if (inner && inner.indexOf('\n') < 0 &&
-                        (cjkPunct.test(inner.charAt(0)) || cjkPunct.test(inner.charAt(inner.length - 1)))){
-                      flushBuf();
-                      out += '<strong>' + window.__mdit.utils.escapeHtml(inner) + '</strong>';
-                    } else {
-                      buf += content.slice(i, end + 2);
+              try {
+                var out = '';
+                var buf = '';
+                var i = 0;
+                function flushBuf(){ if (buf) { out += window.__mdit.utils.escapeHtml(buf); buf = ''; } }
+                while (i < content.length){
+                  if (content[i] === '*' && content[i + 1] === '*'){
+                    var end = content.indexOf('**', i + 2);
+                    if (end >= 0){
+                      var inner = content.slice(i + 2, end);
+                      if (inner && inner.indexOf('\n') < 0 &&
+                          (punctBoundary.test(inner.charAt(0)) || punctBoundary.test(inner.charAt(inner.length - 1)))){
+                        flushBuf();
+                        out += '<strong>' + window.__mdit.utils.escapeHtml(inner) + '</strong>';
+                      } else {
+                        buf += content.slice(i, end + 2);
+                      }
+                      i = end + 2;
+                      continue;
                     }
-                    i = end + 2;
-                    continue;
                   }
+                  buf += content[i];
+                  i++;
                 }
-                buf += content[i];
-                i++;
+                flushBuf();
+                return out;
+              } catch(e) {
+                return defaultTextRender(tokens, idx, options, env, self);
               }
-              flushBuf();
-              return out;
             };
             // —— 数学公式（$...$ / $$...$$）：在 markdown-it 其他行内规则前拦截，避免
             // breaks 的 <br> 切段、反斜杠转义（\,→,）、强调（*_）等破坏公式源码；
