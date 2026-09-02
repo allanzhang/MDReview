@@ -60,7 +60,7 @@ body {
   max-width: 100%;
 }
 #content pre.code-block::before {
-  content: attr(data-lang);
+  content: "▾ " attr(data-lang);
   grid-column: 1 / -1;
   padding: 8px 14px;
   background: #dfe3e7;
@@ -72,6 +72,10 @@ body {
   user-select: none;
   pointer-events: none;
 }
+/* 代码块折叠：点语言栏切换；折叠态隐藏正文与行号栏，语言栏显示行数 */
+#content pre.code-block.collapsed::before { content: "▸ " attr(data-lang) " · " attr(data-lines) " lines"; }
+#content pre.code-block.collapsed .code-gutter,
+#content pre.code-block.collapsed .code-body { display: none; }
 #content pre.code-block .code-gutter {
   padding: 14px 10px 14px 0;
   min-width: 38px;

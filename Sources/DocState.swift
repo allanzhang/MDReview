@@ -37,6 +37,10 @@ enum AppearanceMode: String {
     /// 外观模式（跟随系统/强制亮/强制暗）。默认始终为 system（不持久化手动选择，
     /// 重启回到跟随系统）；手动切换用于临时覆盖，再次点击回到 system。
     @Published var appearance: AppearanceMode = .system
+    /// 阅读区字号缩放（0.8×~1.5×，步进 0.1）。不持久化，与外观"临时覆盖"语义一致。
+    @Published var fontSizeScale: Double = 1.0
+    /// 外部修改热重载计数（右上角「Updated」提示用；仅自增，由视图观察变化）。
+    @Published var hotReloadTick = 0
 
     private let recentKey = "mdreview.recent"
     private let recentMax = 30
@@ -147,6 +151,7 @@ enum AppearanceMode: String {
             let text = try? String(contentsOf: url, encoding: .utf8)
             await MainActor.run {
                 guard let self, let text, text != self.rawText else { return }
+                self.hotReloadTick += 1
                 self.rawText = text
             }
         }

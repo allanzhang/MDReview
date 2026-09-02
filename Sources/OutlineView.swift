@@ -69,9 +69,9 @@ private func levelStyle(for level: Int, scheme: ColorScheme) -> LevelStyle {
     }
 }
 
-/// 层级缩进：H1→0 / H2→12 / H3→24 / H4+→36（单位 pt）。
+/// 层级缩进：H1→0 / H2 及更深→12（H3+ 与 H2 同缩进，层级只靠字号/字重/颜色区分）。
 private func levelIndent(for level: Int) -> CGFloat {
-    CGFloat(min(max(level, 1), 4) - 1) * 12
+    level > 1 ? 12 : 0
 }
 
 /// 行状态底色：中性灰圆角底（Codex 式克制语言），hover 更浅、选中加深；文字颜色不随状态变化。
@@ -126,7 +126,7 @@ struct OutlineView: View {
                         }
                     }
                     // 列表容器留边：左右不让条目贴死面板边界，上下预留 8pt 呼吸空间
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, 5)
                     .padding(.top, 8)
                     .padding(.bottom, 8)
                 }
@@ -177,7 +177,7 @@ struct OutlineView: View {
 }
 
 /// 单行大纲项：整行可点击（含空白与缩进），hover/激活行圆角底色，文字颜色不因状态变化。
-/// 层级由【缩进 + 字号 + 字重 + 文字色】四重区分；有子标题的节点左侧渲染折叠三角（16pt 占位，叶子留空对齐）。
+/// 层级由【缩进 + 字号 + 字重 + 文字色】四重区分；有子标题的节点左侧渲染折叠三角（14pt 占位，叶子留空对齐）。
 private struct OutlineRow: View {
     let node: OutlineNode
     let isCollapsed: Bool
@@ -192,20 +192,20 @@ private struct OutlineRow: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            // 折叠三角占位 16pt：有子标题渲染 ▶/▼，叶子节点留空保持同级文字对齐
+            // 折叠三角占位 14pt：有子标题渲染 ▶/▼，叶子节点留空保持同级文字对齐
             if node.hasChildren {
                 Button(action: toggleCollapse) {
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 14, height: 14)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(isCollapsed ? "Expand" : "Collapse")
             } else {
                 Color.clear
-                    .frame(width: 16, height: 16)
+                    .frame(width: 14, height: 14)
             }
             Text(node.heading.text.isEmpty ? "(Untitled)" : node.heading.text)
                 .font(.system(size: style.fontSize, weight: style.fontWeight))
@@ -214,7 +214,7 @@ private struct OutlineRow: View {
                 .truncationMode(.tail)      // 超长末尾截断显示 …
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.leading, 8 + levelIndent(for: node.heading.level))
+        .padding(.leading, 5 + levelIndent(for: node.heading.level))
         .padding(.trailing, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)

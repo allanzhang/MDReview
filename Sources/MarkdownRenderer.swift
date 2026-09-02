@@ -48,6 +48,7 @@ final class MarkdownWebView: WKWebView {
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(makeItem("Copy", #selector(copySelection(_:))))
+        menu.addItem(makeItem("Copy as Quote", #selector(copyAsQuote(_:))))
         menu.addItem(.separator())
         menu.addItem(makeItem("Toggle Source / Rendered", #selector(toggleSource(_:))))
         menu.addItem(.separator())
@@ -66,6 +67,17 @@ final class MarkdownWebView: WKWebView {
     @objc private func copySelection(_ sender: Any?) {
         // 复制选中文字：走系统 copy 响应链（WKWebView 为第一响应者时生效）
         NSApp.sendAction(Selector(("copy:")), to: nil, from: nil)
+    }
+    @objc private func copyAsQuote(_ sender: Any?) {
+        // 复制选中为 Markdown 引用（每行前缀 > ，空行用 > 保持引用块连续），直接黏给 AI 当上下文
+        evaluateJavaScript("window.getSelection ? window.getSelection().toString() : ''") { [weak self] result, _ in
+            guard let self, let s = result as? String, !s.isEmpty else { return }
+            let quoted = s.components(separatedBy: .newlines)
+                .map { $0.isEmpty ? ">" : "> " + $0 }
+                .joined(separator: "\n")
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(quoted, forType: .string)
+        }
     }
     @objc private func toggleSource(_ sender: Any?) { post(.toggleSource) }
     @objc private func revealInFinder(_ sender: Any?) { post(.revealInFinder) }
@@ -90,6 +102,8 @@ final class MarkdownWebView: WKWebView {
     @Published var activeHeadingID: String? = nil
     /// 阅读进度 0~1（顶部进度条用），滚动时由 JS 回传。
     @Published var readingProgress: Double = 0
+    /// 文档加载/渲染进行中（"大纲思写"loading 窗口：render 置 true，didFinishNavigation 置 false）。
+    @Published var isLoading = false
     /// rendered 页面最近一次 JS 回传的精确滚动偏移；切换源码/渲染时用于恢复实际位置。
     private(set) var renderedScrollOffset: Double = 0
     /// 当前文档文件名（阅读进度持久化 key 用，Swift/UserDefaults 侧）。
@@ -110,6 +124,8 @@ final class MarkdownWebView: WKWebView {
         config.userContentController.add(coord, name: "active")
         // 注册阅读进度回传通道：页面滚动时回传 0~1 进度，用于顶部进度条
         config.userContentController.add(coord, name: "progress")
+        // 注册链接点击回传通道：页面拦截链接点击，本地 .md 在 app 内打开、其余分流
+        config.userContentController.add(coord, name: "openlink")
 
         let wv = MarkdownWebView(frame: .zero, configuration: config)
         wv.autoresizingMask = [.width, .height]
@@ -122,11 +138,13 @@ final class MarkdownWebView: WKWebView {
     /// 用内联了 markdown 的 HTML 重新加载页面。baseURL 设为 .md 所在目录，使相对图片路径可解析。
     /// docName 为文件名，用于阅读进度记忆（UserDefaults key 区分不同文档，不用 localStorage——
     /// WKWebView 在 file:// baseURL 下 localStorage 不持久，重开文档即丢）。
-    func render(_ markdown: String, baseURL: URL?, docName: String? = nil, appearance: AppearanceMode = .system) {
+    /// fontScale 为当前字号缩放，烘焙进 --md-base 变量（按钮调整也走 CSS 变量，见 applyFontSize）。
+    func render(_ markdown: String, baseURL: URL?, docName: String? = nil, appearance: AppearanceMode = .system, fontScale: Double = 1.0) {
+        isLoading = true
         currentDocName = docName
         pageLoaded = false
         let savedProgress = docName.flatMap { Self.savedProgress(for: $0) }
-        webView.loadHTMLString(Self.htmlTemplate(markdown: markdown, docName: docName, savedProgress: savedProgress, chunkMode: "auto", appearance: appearance), baseURL: baseURL)
+        webView.loadHTMLString(Self.htmlTemplate(markdown: markdown, docName: docName, savedProgress: savedProgress, chunkMode: "auto", appearance: appearance, fontScale: fontScale), baseURL: baseURL)
     }
 
     // MARK: - 阅读进度持久化（Swift/UserDefaults，可靠跨会话/跨窗口）
@@ -166,9 +184,40 @@ final class MarkdownWebView: WKWebView {
         webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
+    /// 链接点击分流：本地 .md → app 内打开；其他存在的本地文件 → Finder 定位；http(s)/mailto → 系统浏览器。
+    /// 页面 JS 已拦截并回传原始 href；相对于当前文档所在目录解析相对路径。
+    func openLocalLink(_ ref: String) {
+        let doc = DocState.shared
+        if ref.hasPrefix("http://") || ref.hasPrefix("https://") || ref.hasPrefix("mailto:") {
+            if let u = URL(string: ref) { NSWorkspace.shared.open(u) }
+            return
+        }
+        let pathRef = ref.split(separator: "#", maxSplits: 1).first.map(String.init) ?? ref
+        guard let decoded = pathRef.removingPercentEncoding, !decoded.isEmpty,
+              let base = doc.url?.deletingLastPathComponent() else { return }
+        let url = decoded.hasPrefix("/") ? URL(fileURLWithPath: decoded)
+            : URL(fileURLWithPath: base.path).appendingPathComponent(decoded).standardizedFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        if url.pathExtension.lowercased() == "md" || url.pathExtension.lowercased() == "markdown" {
+            doc.open(url)
+        } else {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+
+    /// 调整阅读字号：直接改写 CSS 变量 --md-base（页面所有字号为 em 等比），
+    /// 不重载页面，保留滚动位置与渲染状态。渲染重载时由 htmlTemplate 烘焙当前缩放。
+    func applyFontSize(_ scale: Double) {
+        guard pageLoaded else { return }
+        let px = String(format: "%.1f", Self.baseFontSize() * scale)
+        webView.evaluateJavaScript("document.documentElement.style.setProperty('--md-base', '\(px)px')", completionHandler: nil)
+    }
+
     /// 页面导航完成后回调：兜底再读一次 window.__outline，确保大纲一定能拿到。
     func didFinishNavigation() {
         pageLoaded = true
+        // 页面 JS 同步渲染完毕，正文已可见，淡出 loading 骨架
+        withAnimation(.easeOut(duration: 0.25)) { isLoading = false }
         webView.evaluateJavaScript("window.__outline") { [weak self] result, _ in
             guard let self else { return }
             if let arr = result as? [[String: Any]] {
@@ -383,13 +432,17 @@ final class MarkdownWebView: WKWebView {
     /// mermaid 按需：仅当 markdown 含 ```mermaid 代码块才内联约 3.5MB 渲染库，普通文档零负担。
     /// chunkMode：阅读传 "auto"（大文档自动分块懒渲染），导出传 "full"（强制全量保证备份完整）。
     /// appearance：渲染时的外观模式（跟随系统/强制亮/强制暗），导出 HTML 传 .system 跟随打开者系统。
-    static func htmlTemplate(markdown: String, docName: String? = nil, savedProgress: String? = nil, chunkMode: String = "auto", appearance: AppearanceMode = .system) -> String {
+    /// 正文基准字号：跟随系统 body 字号等比放大（页面 --md-base 变量）；导出 HTML 无此变量时 CSS 回退 14.5px。
+    private static func baseFontSize() -> CGFloat {
+        max(14.5, NSFont.preferredFont(forTextStyle: .body).pointSize * 1.1)
+    }
+
+    static func htmlTemplate(markdown: String, docName: String? = nil, savedProgress: String? = nil, chunkMode: String = "auto", appearance: AppearanceMode = .system, fontScale: Double = 1.0) -> String {
         let mdJSON = jsonString(for: markdown)
         let renderScript = "<script>\(jsRenderInline(mdJSON: mdJSON, chunkMode: chunkMode))</script>"
-        // 正文基准字号跟随系统（body 文本样式，等比放大到阅读尺寸）；导出 HTML 无此变量时 CSS 回退 16px
-        let bodySize = NSFont.preferredFont(forTextStyle: .body).pointSize
-        let baseSize = max(14.5, bodySize * 1.1)
-        let fontVar = "<style>:root { --md-base: \(String(format: "%.1f", baseSize))px; }</style>"
+        // 正文基准字号跟随系统（body 文本样式，等比放大到阅读尺寸），fontScale 为用户缩放；
+        // 导出 HTML 无此变量时 CSS 回退 16px
+        let fontVar = "<style>:root { --md-base: \(String(format: "%.1f", Self.baseFontSize() * fontScale))px; }</style>"
         // 注入文件名供阅读进度记忆使用（UserDefaults key 区分不同文档）
         let docNameScript = "<script>window.__docName = \(jsonString(for: docName ?? ""));</script>"
         // 注入上次阅读位置（章节 id；无则空串），页面渲染完成后 __restoreProgress 使用
@@ -731,6 +784,19 @@ final class MarkdownWebView: WKWebView {
         if(!window.__forceTheme || window.__forceTheme === 'system'){ window.applyTheme(); }
       });
     }
+    // —— 链接点击：拦截所有普通左键点击回传 Swift——本地 .md 在 app 内打开、
+    // http(s)/mailto 转系统浏览器；WebView 只呈现内容，不做整页导航离开阅读流。
+    document.addEventListener('click', function(ev){
+      if(ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey){ return; }
+      var a = ev.target && ev.target.closest ? ev.target.closest('a') : null;
+      if(!a){ return; }
+      var href = (a.getAttribute('href') || '').trim();
+      if(!href || href.charAt(0) === '#'){ return; }
+      ev.preventDefault();
+      if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.openlink){
+        window.webkit.messageHandlers.openlink.postMessage(href);
+      }
+    });
     """#
 
     /// 页面加载时执行的渲染 + 大纲回传 IIFE。mdJSON 已是合法 JS 字符串字面量，直接内联。
@@ -890,6 +956,7 @@ final class MarkdownWebView: WKWebView {
                 pre.setAttribute('data-lang', langMatch ? langMatch[1] : 'code');
                 if (pre.querySelector('.code-gutter')) { continue; }
                 var lines = (code.textContent || '').replace(/\n$/, '').split('\n');
+                pre.setAttribute('data-lines', String(lines.length));
                 var gutter = document.createElement('div');
                 gutter.className = 'code-gutter';
                 var nums = [];
@@ -929,6 +996,15 @@ final class MarkdownWebView: WKWebView {
                   } else { fallback(); }
                 });
                 pre.appendChild(copy);
+                // 折叠/展开：点击语言栏（伪元素区域命中 pre 本体）切换 collapsed；
+                // 复制按钮、正文、行号栏的点击不触发折叠
+                pre.addEventListener('click', function(ev){
+                  var t = ev.target;
+                  if(!t){ return; }
+                  if(t.classList && t.classList.contains('code-copy')){ return; }
+                  if(t.closest && (t.closest('.code-body') || t.closest('.code-gutter'))){ return; }
+                  pre.classList.toggle('collapsed');
+                });
                 pre.dataset.polished = '1';
               }
             };
@@ -1120,6 +1196,9 @@ final class MarkdownWebView: WKWebView {
             r.updateRenderedScrollOffset(offset)
             guard r.readingProgress != progress else { return }
             r.readingProgress = progress
+        } else if message.name == "openlink" {
+            guard let ref = message.body as? String else { return }
+            renderer?.openLocalLink(ref)
         }
     }
 

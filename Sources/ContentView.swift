@@ -53,6 +53,8 @@ struct ContentView: View {
         }
         // 外观切换：即时注入 JS 生效，不重载页面（保留滚动位置与渲染状态）
         .onChange(of: doc.appearance) { _, mode in renderer.applyAppearance(mode) }
+        // 字号缩放：即时改写 CSS 变量生效，不重载页面（渲染重载时由模板烘焙当前缩放）
+        .onChange(of: doc.fontSizeScale) { _, s in renderer.applyFontSize(s) }
         // source / rendered 的进度、outline 高亮和滚动记忆分开管理。
         // 离开 rendered 的快照必须在 showSource 改变前抓取（见 toggleSource），
         // onChange 触发时 SourceView 已经写回 renderer，不能在这里回读。
@@ -244,6 +246,8 @@ struct ContentView: View {
                            docName: doc.url?.lastPathComponent,
                            appearance: doc.appearance)
             }
+            // "大纲思写"加载骨架：盖在最上层，渲染完成整体淡出（正文已在底下）
+            OutlineLoadingHost(renderer: renderer, text: doc.rawText)
         }
         .contextMenu {
             Button("Copy") { copySelection() }
@@ -262,6 +266,18 @@ struct ContentView: View {
         .overlay(alignment: .topLeading) {
             // 阅读进度条：独立子视图观察 renderer，进度变化时精准重绘
             ReadingProgressBar(renderer: renderer, isDark: isDarkEffective)
+        }
+        // 字号悬浮控件：渲染态（有文档且非源码）显示在正文右上角
+        .overlay(alignment: .topTrailing) {
+            if doc.url != nil && !doc.showSource {
+                FontSizeControls(scale: $doc.fontSizeScale)
+            }
+        }
+        // 热更新提示：外部保存瞬间在字号控件下方闪 2s「Updated」
+        .overlay(alignment: .topTrailing) {
+            HotReloadToast()
+                .padding(.top, 84)
+                .padding(.trailing, 12)
         }
         .onChange(of: searchText) { _, newValue in
             // 防抖：连续输入不触发搜索，停顿 250ms 后执行一次（避免大文档全文遍历打满 WebContent）
@@ -387,7 +403,7 @@ struct ContentView: View {
         renderedScrollOffset = 0
         searchText = ""
         renderer.render(doc.rawText, baseURL: url.deletingLastPathComponent(),
-                        docName: url.lastPathComponent, appearance: doc.appearance)
+                        docName: url.lastPathComponent, appearance: doc.appearance, fontScale: doc.fontSizeScale)
     }
 
     private func openPanel() {
@@ -574,6 +590,227 @@ private struct ReadingProgressBar: View {
         }
         .frame(height: 2)
         .allowsHitTesting(false)
+    }
+}
+
+/// 观察 renderer.isLoading 的宿主：ContentView 不观察 renderer（避免整树重算），
+/// 与 ReadingProgressBar 同一模式；loading 期间展示"大纲思写"骨架。
+private struct OutlineLoadingHost: View {
+    @ObservedObject var renderer: MarkdownRenderer
+    let text: String
+
+    var body: some View {
+        if renderer.isLoading {
+            OutlineLoadingView(text: text)
+                .transition(.opacity)
+        }
+    }
+}
+
+/// "大纲思写"加载骨架：WebView 解析/渲染 MD 期间，把预扫描的文档标题逐条淡入（前 14 条），
+/// 顶部 2pt 扫描线往返扫动示意解析中（JS 渲染是同步爆发、无真实进度可报）。
+/// 完成即整体淡出，底下正文已渲染完成；与正文区同底色，出现/消失无白闪。
+private struct OutlineLoadingView: View {
+    private static let maxShown = 14
+    private let headings: [(level: Int, text: String)]
+
+    @State private var showCount = 0
+    @State private var scanningOffset: CGFloat = 0
+    @Environment(\.colorScheme) private var scheme
+
+    init(text: String) {
+        headings = Self.scanHeadings(text)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            scanningLine
+                .padding(.bottom, 6)
+            ForEach(Array(headings.prefix(Self.maxShown).enumerated()), id: \.offset) { index, h in
+                Text(h.text)
+                    .font(.system(size: h.level == 1 ? 13 : 11.5,
+                                  weight: h.level == 1 ? .semibold : .regular))
+                    .foregroundStyle(h.level == 1 ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.leading, h.level > 1 ? 12 : 0)
+                    .opacity(index < showCount ? 1 : 0)
+                    .animation(.easeOut(duration: 0.2), value: showCount)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if headings.count > Self.maxShown {
+                Text("…")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .opacity(showCount >= Self.maxShown ? 1 : 0)
+                    .animation(.easeOut(duration: 0.2), value: showCount)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 34)
+        .padding(.top, 26)
+        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .textBackgroundColor))
+        .onAppear(perform: startReveal)
+    }
+
+    /// 扫描线：与阅读进度条同色的 2pt 短段左右往返扫动。
+    private var scanningLine: some View {
+        GeometryReader { geo in
+            Capsule()
+                .fill(scheme == .dark
+                      ? Color(red: 82/255, green: 82/255, blue: 82/255)
+                      : Color(red: 197/255, green: 202/255, blue: 211/255))
+                .frame(width: geo.size.width * 0.25, height: 2)
+                .offset(x: scanningOffset * geo.size.width * 0.75)
+                .onAppear {
+                    withAnimation(.linear(duration: 1.3).repeatForever(autoreverses: true)) {
+                        scanningOffset = 1
+                    }
+                }
+        }
+        .frame(height: 2)
+        .allowsHitTesting(false)
+    }
+
+    private func startReveal() {
+        let total = min(headings.count, Self.maxShown)
+        guard total > 0 else { return }
+        Task { @MainActor in
+            for i in 1...total {
+                try? await Task.sleep(for: .milliseconds(45))
+                showCount = i
+            }
+        }
+    }
+
+    /// 预扫描文档标题（跳过代码围栏），只取层级与文本——骨架就是文档自己的大纲。
+    private static func scanHeadings(_ text: String) -> [(level: Int, text: String)] {
+        var result: [(level: Int, text: String)] = []
+        var inFence = false
+        text.enumerateLines { line, _ in
+            if line.range(of: "^\\s*```", options: .regularExpression) != nil { inFence.toggle() }
+            guard !inFence,
+                  let m = line.range(of: "^#{1,6}\\s+", options: .regularExpression) else { return }
+            let level = line.distance(from: m.lowerBound, to: m.upperBound) - 1
+            let body = line[m.upperBound...].trimmingCharacters(in: .whitespaces)
+            guard !body.isEmpty else { return }
+            result.append((level, body))
+        }
+        return result
+    }
+}
+
+/// 热更新提示：文档被外部编辑器保存并自动重载后，右上角闪现 2s「Updated」微型标签。
+private struct HotReloadToast: View {
+    @EnvironmentObject private var doc: DocState
+    @State private var visible = false
+    @State private var hideTask: Task<Void, Never>?
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Text("Updated")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(Color.primary.opacity(0.75))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background {
+                Capsule().fill(scheme == .dark ? Color(white: 0.26) : Color.white)
+                    .overlay { Capsule().stroke(scheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.10)) }
+            }
+            .opacity(visible ? 1 : 0)
+            .offset(y: visible ? 0 : -4)
+            .animation(.easeOut(duration: 0.18), value: visible)
+            .allowsHitTesting(false)
+            .onChange(of: doc.hotReloadTick) { _, _ in
+                hideTask?.cancel()
+                visible = true
+                hideTask = Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(2))
+                    visible = false
+                }
+            }
+    }
+}
+
+/// 字号悬浮控件（上 A− / 下 A+ 竖排）：缩放 0.8×~1.5×、步进 0.15（单击 ~15%，肉眼可辨），经 renderer.applyFontSize 即时生效。
+/// 中性灰胶囊底（与 SidebarSwitcher 同一语言），轻阴影托起悬浮感。
+private struct FontSizeControls: View {
+    @Binding var scale: Double
+    @Environment(\.colorScheme) private var scheme
+
+    private static let minScale = 0.8
+    private static let maxScale = 1.5
+    private static let step = 0.15
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FontSizeButton("A−", hint: "Decrease Font Size", enabled: scale > Self.minScale) {
+                scale = min(Self.maxScale, max(Self.minScale, scale - Self.step))
+            }
+            Divider().frame(width: 14)
+            FontSizeButton("A+", hint: "Increase Font Size", enabled: scale < Self.maxScale) {
+                scale = min(Self.maxScale, max(Self.minScale, scale + Self.step))
+            }
+        }
+        .padding(3)
+        .background {
+            Capsule().fill(scheme == .dark ? Color(white: 0.26) : Color.white)
+                .overlay { Capsule().stroke(scheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.10)) }
+        }
+        .shadow(color: Color.black.opacity(scheme == .dark ? 0.30 : 0.08), radius: 3, y: 1)
+        .padding(.top, 8)
+        .padding(.trailing, 12)
+    }
+}
+
+/// 单个字号按钮：hover 出现中性灰圆角底，按下由 FontSizePressStyle 提供缩放+变淡反馈，松开回弹。
+private struct FontSizeButton: View {
+    let title: String
+    let hint: String
+    let enabled: Bool
+    let action: () -> Void
+
+    @State private var isHovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    init(_ title: String, hint: String, enabled: Bool, action: @escaping () -> Void) {
+        self.title = title
+        self.hint = hint
+        self.enabled = enabled
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(enabled ? Color.secondary : Color.secondary.opacity(0.35))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+                .background {
+                    if enabled && isHovering {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(scheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.09))
+                    }
+                }
+                .animation(.easeOut(duration: 0.12), value: isHovering)
+        }
+        .buttonStyle(FontSizePressStyle())
+        .onHover { isHovering = enabled && $0 }
+        .disabled(!enabled)
+        .help(hint)
+    }
+}
+
+/// 按下反馈：轻微缩小 + 变淡，松开幅度回弹（纯 plain 按钮在 macOS 上没有默认按压反馈）。
+private struct FontSizePressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.9 : 1)
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
