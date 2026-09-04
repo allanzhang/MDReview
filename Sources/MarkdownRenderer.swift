@@ -867,11 +867,14 @@ final class MarkdownWebView: WKWebView {
             // —— 数学公式（$...$ / $$...$$）：在 markdown-it 其他行内规则前拦截，避免
             // breaks 的 <br> 切段、反斜杠转义（\,→,）、强调（*_）等破坏公式源码；
             // 直接用 KaTeX 渲染成 HTML。规则放在 strikethrough 之前（backticks 之后），
-            // 行内代码里的 $ 已被 backticks 规则消费，不会误伤。
+            // 行内代码里的 $ 已被 backticks 规则消费，不会误伤。行内 "$"+数字（如
+            // $60B、$2.7B）是货币金额——$ 只出现在前面、没有成对收尾，须排除在公式外，
+            // 否则会被贪婪匹配吞成乱码并把 `**...**` 粗体一并破坏。
             window.__mdit.inline.ruler.before('strikethrough', 'math', function(state, silent){
               var start = state.pos;
               if (state.src.charCodeAt(start) !== 0x24) { return false; }       // '$'
               var isDisp = state.src.charCodeAt(start + 1) === 0x24;
+              if (!isDisp && state.src.charCodeAt(start + 1) >= 0x30 && state.src.charCodeAt(start + 1) <= 0x39) { return false; }  // '$'+数字（$60B/$2.7B）为货币金额，仅单边 dollar，非公式
               var openLen = isDisp ? 2 : 1;
               var closeStr = isDisp ? '$$' : '$';
               var end = state.src.indexOf(closeStr, start + openLen);
