@@ -327,6 +327,15 @@ struct ContentView: View {
         }
         ToolbarItem(placement: .automatic) {
             Button {
+                refreshDocument()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .help("Reload from Disk")
+            .disabled(doc.url == nil)
+        }
+        ToolbarItem(placement: .automatic) {
+            Button {
                 toggleSource()
             } label: {
                 Image(systemName: doc.showSource ? "doc.richtext" : "doc.text")
@@ -404,6 +413,20 @@ struct ContentView: View {
         searchText = ""
         renderer.render(doc.rawText, baseURL: url.deletingLastPathComponent(),
                         docName: url.lastPathComponent, appearance: doc.appearance, fontScale: doc.fontSizeScale)
+    }
+
+    /// 手动刷新：重新读盘并重渲染。内容有变化时更新 rawText（由 onChange 统一触发渲染）；
+    /// 内容未变化或读取失败时保持当前内容，仅强制重渲染（文件监听热更新的手动兜底）。
+    private func refreshDocument() {
+        guard let url = doc.url else { return }
+        Task {
+            let text = try? String(contentsOf: url, encoding: .utf8)
+            if let text, text != doc.rawText {
+                doc.rawText = text
+            } else {
+                renderCurrent()
+            }
+        }
     }
 
     private func openPanel() {
