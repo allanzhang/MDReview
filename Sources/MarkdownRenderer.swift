@@ -808,6 +808,13 @@ final class MarkdownWebView: WKWebView {
             // 页面加载即应用外观主题（跟随系统/强制亮/强制暗）
             window.applyTheme && window.applyTheme();
             window.__mdit = window.markdownit({html:true, linkify:true, typographer:true, breaks:true});
+            // —— 放宽 data:image 校验：markdown-it 默认只放行 gif/png/jpeg/webp 的 base64，
+            // 否则 ![...](data:image/svg+xml;base64,...) 这类内嵌 SVG 会被当成无效链接、
+            // 整段按字面量显示。泛化为任意图片子类型，javascript:/file:/vbscript: 仍拦截。
+            window.__mdit.validateLink = function(url){
+              var e = url.trim().toLowerCase();
+              return !/^(vbscript|javascript|file|data):/.test(e) || /^data:image\/[a-z0-9.+-]+;/.test(e);
+            };
             if(window.markdownitFootnote){ try { window.__mdit.use(window.markdownitFootnote); } catch(e){} }
             if(window.mdPlugins){
               try {
