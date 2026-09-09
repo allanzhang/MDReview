@@ -1,0 +1,156 @@
+{
+  "description": "Punctuation-flanked strong emphasis regressions for the app renderer.",
+  "profile": "app",
+  "cases": [
+    {
+      "name": "punctuation-flanked bold followed by another bold pair",
+      "markdown": "①**\"A\"**——X——②**\"B\"**",
+      "expected": "①<strong>\"A\"</strong>——X——②<strong>\"B\"</strong>",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "ordinary bold is still handled by markdown-it",
+      "markdown": "普通 **粗体** 文本",
+      "expected": "普通 <strong>粗体</strong> 文本"
+    },
+    {
+      "name": "ordinary punctuation outside bold is still handled by markdown-it",
+      "markdown": "A**X**，B；A，**X**B",
+      "expected": "A<strong>X</strong>，B；A，<strong>X</strong>B"
+    },
+    {
+      "name": "ordinary bold before punctuation-flanked bold keeps token indices aligned",
+      "markdown": "A**one**B**\"two\"**C",
+      "expected": "A<strong>one</strong>B<strong>\"two\"</strong>C",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "punctuation-flanked bold may contain nested strong",
+      "markdown": "A**\"outer **inner**\"**B",
+      "expected": "A<strong>\"outer <strong>inner</strong>\"</strong>B",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "punctuation-flanked bold may span a soft line break",
+      "markdown": "A**\"line1\nline2\"**B",
+      "expected": "A<strong>\"line1<br>\nline2\"</strong>B",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "code spans containing strong delimiters are skipped while finding the close",
+      "markdown": "A**\"a `**` b\"**B",
+      "expected": "A<strong>\"a <code>**</code> b\"</strong>B",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "escaped strong delimiters are skipped while finding the close",
+      "markdown": "A**\"a \\** b\"**B",
+      "expected": "A<strong>\"a ** b\"</strong>B",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "punctuation-flanked bold at line boundaries",
+      "markdown": "**\"X\"**",
+      "expected": "<strong>\"X\"</strong>",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "CJK quotation marks are covered",
+      "markdown": "A**「引用」**B",
+      "expected": "A<strong>「引用」</strong>B"
+    },
+    {
+      "name": "CJK corner brackets are covered",
+      "markdown": "A**『引用』**B",
+      "expected": "A<strong>『引用』</strong>B"
+    },
+    {
+      "name": "CJK parentheses and book-title marks are covered",
+      "markdown": "A**（括号）**B；A**《书名》**B",
+      "expected": "A<strong>（括号）</strong>B；A<strong>《书名》</strong>B"
+    },
+    {
+      "name": "full-width brackets are covered",
+      "markdown": "A**【方括号】**B",
+      "expected": "A<strong>【方括号】</strong>B"
+    },
+    {
+      "name": "ellipsis and em dash are covered",
+      "markdown": "A**……**B；A**——**B",
+      "expected": "A<strong>……</strong>B；A<strong>——</strong>B"
+    },
+    {
+      "name": "Unicode punctuation outside the old BMP table: Greek question mark",
+      "markdown": "A**;X;**B",
+      "expected": "A<strong>;X;</strong>B"
+    },
+    {
+      "name": "Unicode punctuation outside the old BMP table: Arabic question mark",
+      "markdown": "A**؟X؟**B",
+      "expected": "A<strong>؟X؟</strong>B"
+    },
+    {
+      "name": "Unicode punctuation outside the old BMP table: Devanagari danda",
+      "markdown": "A**।X।**B",
+      "expected": "A<strong>।X।</strong>B"
+    },
+    {
+      "name": "Unicode punctuation outside the old BMP table: modifier letter less-than",
+      "markdown": "A**˂X˂**B",
+      "expected": "A<strong>˂X˂</strong>B"
+    },
+    {
+      "name": "Unicode symbols are covered",
+      "markdown": "A**©**B；A**→**B；A**😀**B",
+      "expected": "A<strong>©</strong>B；A<strong>→</strong>B；A<strong>😀</strong>B"
+    },
+    {
+      "name": "punctuation on the opening side only",
+      "markdown": "A**\"开头**B",
+      "expected": "A<strong>\"开头</strong>B",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "punctuation on the closing side only",
+      "markdown": "A**结尾\"**B",
+      "expected": "A<strong>结尾\"</strong>B",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "punctuation-only bold content",
+      "markdown": "A**\"**B",
+      "expected": "A<strong>\"</strong>B",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "nested emphasis remains recursive",
+      "markdown": "A**\"粗体 *斜体* 粗体\"**B",
+      "expected": "A<strong>\"粗体 <em>斜体</em> 粗体\"</strong>B",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "nested link remains recursive",
+      "markdown": "A**[\"A\"](https://example.com)**B",
+      "expected": "A<strong><a href=\"https://example.com\">\"A\"</a></strong>B",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "nested code span remains recursive",
+      "markdown": "A**`\"code\"`**B",
+      "expected": "A<strong><code>\"code\"</code></strong>B",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "code spans are not rewritten",
+      "markdown": "`**\"code\"**`",
+      "expected": "<code>**&quot;code&quot;**</code>",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "triple emphasis is left to markdown-it",
+      "markdown": "***\"X\"***",
+      "expected": "<em><strong>\"X\"</strong></em>",
+      "normalizeQuotes": true
+    }
+  ]
+}

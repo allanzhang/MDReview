@@ -2,7 +2,7 @@
 
 SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读审阅器**——快、简洁、克制，不堆编辑功能，对标 Typora 的"轻量纯净版"。
 
-当前版本：**V1.4**（2026-09-06）
+当前版本：**V1.4.1**（2026-09-09）
 
 ## 运行方式
 - 打开 `MDReview.xcodeproj` → Xcode 里 `Cmd+R` 即可运行（已 ad-hoc 签名，本机直接跑）。
@@ -89,6 +89,12 @@ MDReview/                         (工程根目录)
     ├── Info.plist
     └── Resources/               (markdown-it / KaTeX / highlight.js / mermaid 等，全部内置离线)
 ```
+
+## 渲染器改动门禁
+- 先写最小复现，再改 `Sources/MarkdownRenderer.swift` 的 JS 渲染规则；不允许只修文章绕过问题。
+- 每个修复必须补到 `Tests/fixtures/renderer/*.json`，历史问题、CJK 标点粗体、真实文章片段分开留档。
+- 提交前运行 `node Tests/run.js`；涉及 CommonMark 偏差时同步更新 `Tests/fixtures/commonmark/divergences.json` 和 `Docs/renderer-contract.md`。
+- CI 在 macOS runner 上执行同一套渲染测试，并运行 `xcodebuild` 验证 App 编译；CI 不执行 `xcodegen generate`，避免改写工程文件。
 
 ## 技术
 - Swift 6 / SwiftUI；渲染内核 `WKWebView` + 本地 `markdown-it`（CommonMark + GFM + 脚注）+ `KaTeX` + `highlight.js` + `mermaid` + `md-plugins`

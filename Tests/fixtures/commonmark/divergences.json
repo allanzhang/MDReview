@@ -1,0 +1,32 @@
+[
+  {
+    "example": 218,
+    "kind": "html-serialization",
+    "reason": "markdown-it emits an empty blockquote without an internal newline; browsers render both forms identically.",
+    "actual": "<p><a href=\"/url\">foo</a></p>\n<blockquote></blockquote>\n"
+  },
+  {
+    "example": 239,
+    "kind": "html-serialization",
+    "reason": "markdown-it emits an empty blockquote without an internal newline; browsers render both forms identically.",
+    "actual": "<blockquote></blockquote>\n"
+  },
+  {
+    "example": 240,
+    "kind": "html-serialization",
+    "reason": "markdown-it emits an empty blockquote without an internal newline; browsers render both forms identically.",
+    "actual": "<blockquote></blockquote>\n"
+  },
+  {
+    "example": 380,
+    "kind": "app-extension",
+    "reason": "punct_strong intentionally renders quoted strong text that CommonMark leaves literal.",
+    "actual": "<p>a<strong>&quot;foo&quot;</strong></p>\n"
+  },
+  {
+    "example": 392,
+    "kind": "app-extension",
+    "reason": "punct_strong intentionally treats punctuation-only strong content as a valid app-level extension.",
+    "actual": "<p><strong>(</strong>foo)</p>\n"
+  }
+]

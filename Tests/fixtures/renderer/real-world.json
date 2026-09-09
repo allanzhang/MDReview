@@ -1,0 +1,27 @@
+{
+  "description": "Representative excerpts from AI_News_2026-09-07.md.",
+  "profile": "app",
+  "cases": [
+    {
+      "name": "book-title bold inside CJK title marks",
+      "markdown": "OpenAI 在题为《**An Alien Mind**》的官博文章中宣布",
+      "expected": "OpenAI 在题为《<strong>An Alien Mind</strong>》的官博文章中宣布"
+    },
+    {
+      "name": "ordinary dates and names around CJK punctuation",
+      "markdown": "**9 月 6 日**，OpenAI 首席科学家 **Jakub Pachocki** 亲自撰文",
+      "expected": "<strong>9 月 6 日</strong>，OpenAI 首席科学家 <strong>Jakub Pachocki</strong> 亲自撰文"
+    },
+    {
+      "name": "quoted sentence with em dash continuation",
+      "markdown": "④**正式期待\"自愿放缓将成为常态，直到建立共享的安全标准\"**——并表示**OpenAI 自身会按需\"单方面停止进一步扩展\"**",
+      "expected": "④<strong>正式期待\"自愿放缓将成为常态，直到建立共享的安全标准\"</strong>——并表示<strong>OpenAI 自身会按需\"单方面停止进一步扩展\"</strong>",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "bold metric followed by CJK parenthetical",
+      "markdown": "**2026 年 8 月是历史新高**（自 2025 年 1 月开始统计以来）",
+      "expected": "<strong>2026 年 8 月是历史新高</strong>（自 2025 年 1 月开始统计以来）"
+    }
+  ]
+}

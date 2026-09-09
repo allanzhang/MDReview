@@ -1,0 +1,85 @@
+{
+  "description": "Golden coverage for syntax enabled by the app renderer beyond CommonMark.",
+  "profile": "app",
+  "cases": [
+    {
+      "name": "emoji shortcode",
+      "markdown": ":smile:",
+      "expected": "😄"
+    },
+    {
+      "name": "highlight mark",
+      "markdown": "==高亮==",
+      "expected": "<mark>高亮</mark>"
+    },
+    {
+      "name": "superscript",
+      "markdown": "x^2^",
+      "expected": "x<sup>2</sup>"
+    },
+    {
+      "name": "numeric subscript",
+      "markdown": "H~2~O",
+      "expected": "H<sub>2</sub>O"
+    },
+    {
+      "name": "single-tilde deletion",
+      "markdown": "~文字~",
+      "expected": "<s>文字</s>"
+    },
+    {
+      "name": "GFM strikethrough",
+      "markdown": "~~文字~~",
+      "expected": "<s>文字</s>"
+    },
+    {
+      "name": "inline math",
+      "markdown": "$x^2$",
+      "contains": [
+        "class=\"katex\"",
+        "annotation encoding=\"application/x-tex\">x^2"
+      ]
+    },
+    {
+      "name": "display math",
+      "markdown": "$$\nx^2\n$$",
+      "mode": "block",
+      "contains": [
+        "class=\"katex-display\"",
+        "annotation encoding=\"application/x-tex\">x^2"
+      ]
+    },
+    {
+      "name": "linkify",
+      "markdown": "https://example.com",
+      "expected": "<a href=\"https://example.com\">https://example.com</a>"
+    },
+    {
+      "name": "soft break becomes br",
+      "markdown": "a\nb",
+      "mode": "block",
+      "expected": "<p>a<br>\nb</p>\n"
+    },
+    {
+      "name": "definition list",
+      "markdown": "Term\n: Definition",
+      "mode": "block",
+      "expected": "<dl>\n<dt>Term</dt>\n<dd>Definition</dd>\n</dl>\n"
+    },
+    {
+      "name": "footnote",
+      "markdown": "脚注[^1]\n\n[^1]: 内容",
+      "mode": "block",
+      "contains": [
+        "class=\"footnote-ref\"",
+        "id=\"fn1\"",
+        "footnote-backref"
+      ]
+    },
+    {
+      "name": "typographer",
+      "markdown": "\"quotes\" -- ...",
+      "expected": "“quotes” – …"
+    }
+  ]
+}

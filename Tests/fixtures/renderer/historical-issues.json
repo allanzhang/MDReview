@@ -1,0 +1,30 @@
+{
+  "description": "Golden snippets for the three punctuation-flanked bold defects reported from AI_News_2026-09-07.md.",
+  "profile": "app",
+  "cases": [
+    {
+      "name": "issue 1: quoted sentence must not swallow the following sentence",
+      "markdown": "①**\"目前我认为没有任何实验室已充分解决对齐与监控问题，以在更长时间内负责任地以最高速度持续扩展\"**——这是风险声明；②**\"目标对齐（Goal Alignment）\"**继续说明。",
+      "expected": "①<strong>\"目前我认为没有任何实验室已充分解决对齐与监控问题，以在更长时间内负责任地以最高速度持续扩展\"</strong>——这是风险声明；②<strong>\"目标对齐（Goal Alignment）\"</strong>继续说明。",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "issue 2: quoted phrase keeps its own bold boundary",
+      "markdown": "①**\"本地化加速\"**——Microsoft；②**\"模型疲劳（model fatigue）\"袭击企业 AI 买家**：继续说明。",
+      "expected": "①<strong>\"本地化加速\"</strong>——Microsoft；②<strong>\"模型疲劳（model fatigue）\"袭击企业 AI 买家</strong>：继续说明。",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "issue 3: quoted phrase in a longer Chinese sentence",
+      "markdown": "选择**\"训练数据来源声明 + 商用许可清晰\"**的厂商；②**\"二次分赃\"问题在 AI 行业是普遍隐患**——继续说明。",
+      "expected": "选择<strong>\"训练数据来源声明 + 商用许可清晰\"</strong>的厂商；②<strong>\"二次分赃\"问题在 AI 行业是普遍隐患</strong>——继续说明。",
+      "normalizeQuotes": true
+    },
+    {
+      "name": "minimal reproduction",
+      "markdown": "①**\"A\"**——X——②**\"B\"**",
+      "expected": "①<strong>\"A\"</strong>——X——②<strong>\"B\"</strong>",
+      "normalizeQuotes": true
+    }
+  ]
+}

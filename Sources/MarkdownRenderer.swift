@@ -827,50 +827,124 @@ final class MarkdownWebView: WKWebView {
                 if(P.deflist){ window.__mdit.use(P.deflist); }
               } catch(e){}
             }
-            // —— 标点粗体兜底：标准 markdown-it 把引号等标点当作 flanking 边界，导致
-            // **「...」**、**"..."**、**……** 等无法开/闭强调（直引号在 CJK 语境下
-            // smartquotes 也不会转换）。这里不改解析规则，只对标准解析后残留在 text
-            // token 里的 **...** 做修复：仅当内容首/尾是「会阻断强调的标点」时加粗。
-            // 字符集为实验推导的 CommonMark 阻断强调字符全集（剔除空白类，避免误伤
-            // 空格分隔的裸星号）；不匹配的一对整体原样跳过，避免与后续 ** 错配；
-            // 普通文本统一 HTML 转义；任何异常回退默认渲染（显示源码），保证不崩溃。
-            var punctBoundary = /[\u0021-\u0029\u002B-\u002F\u003A-\u0040\u005B-\u0060\u007B-\u007E\u00A1-\u00A9\u00AB\u00AC\u00AE-\u00B1\u00B4\u00B6-\u00B8\u00BB\u00BF\u00D7\u00F7\u2010-\u2027\u2030-\u205E\u207A-\u207E\u208A-\u208E\u20A0-\u20C0\u2100-\u2101\u2103-\u2106\u2108\u2109\u2114\u2116-\u2118\u211E-\u2123\u2125\u2127\u2129\u212E\u213A\u213B\u2140-\u2144\u214A-\u214D\u214F\u218A\u218B\u2190-\u2426\u2440-\u244A\u249C-\u24E9\u2500-\u2775\u2794-\u2B73\u2B76-\u2B95\u2B97-\u2BFF\u2E00-\u2E2E\u2E30-\u2E5D\u3001-\u3004\u3008-\u3020\u3030\u3036\u3037\u303D-\u303F\u309B\u309C\u30A0\u30FB\uFE30-\uFE4F\uFF01-\uFF0F\uFF1A-\uFF20\uFF3B-\uFF40\uFF5B-\uFF65\uFFE0-\uFFE6]/;
-            var defaultTextRender = window.__mdit.renderer.rules.text || function(tokens, idx, options, env, self){
-              return window.__mdit.utils.escapeHtml(tokens[idx].content);
-            };
-            window.__mdit.renderer.rules.text = function(tokens, idx, options, env, self){
-              var content = tokens[idx].content;
-              if (content.indexOf('**') < 0) { return defaultTextRender(tokens, idx, options, env, self); }
-              try {
-                var out = '';
-                var buf = '';
-                var i = 0;
-                function flushBuf(){ if (buf) { out += window.__mdit.utils.escapeHtml(buf); buf = ''; } }
-                while (i < content.length){
-                  if (content[i] === '*' && content[i + 1] === '*'){
-                    var end = content.indexOf('**', i + 2);
-                    if (end >= 0){
-                      var inner = content.slice(i + 2, end);
-                      if (inner && inner.indexOf('\n') < 0 &&
-                          (punctBoundary.test(inner.charAt(0)) || punctBoundary.test(inner.charAt(inner.length - 1)))){
-                        flushBuf();
-                        out += '<strong>' + window.__mdit.utils.escapeHtml(inner) + '</strong>';
-                      } else {
-                        buf += content.slice(i, end + 2);
-                      }
-                      i = end + 2;
+            // —— 标点粗体兜底：markdown-it 的强调分隔符遵循 CommonMark flanking
+            // 规则，`**` 后紧跟引号/括号等标点、或闭合 `**` 前紧跟标点时，可能被
+            // 判定为不可开启/闭合，随后把后续另一组 `**` 错配成跨段粗体。这里在
+            // inline 解析阶段只接管“首尾紧邻标点且标准 flanking 无法配对”的成对
+            // `**...**`：普通粗体仍交给 markdown-it，避免改变既有语义。
+            //
+            // 标点判定使用 markdown-it 自带的 isPunctChar（Unicode P/S 完整覆盖，
+            // 包含非 BMP 字符），不再维护手写 BMP 字符表；内部内容递归交给 inline
+            // parser，因此链接、斜体、行内代码等嵌套语法仍会正常渲染。
+            function findPunctStrongClose(state, start){
+              var src = state.src;
+              var max = state.posMax;
+              var j = start;
+              var nested = 0;
+              while (j < max){
+                if (src[j] === '\\'){ j += 2; continue; }
+                if (src[j] === '`'){
+                  var tickLen = 1;
+                  while (src[j + tickLen] === '`'){ tickLen++; }
+                  var tick = '';
+                  for (var t = 0; t < tickLen; t++){ tick += '`'; }
+                  var codeClose = src.indexOf(tick, j + tickLen);
+                  if (codeClose >= 0 && codeClose < max){ j = codeClose + tickLen; continue; }
+                }
+                if (src.charCodeAt(j) === 0x2A && src.charCodeAt(j + 1) === 0x2A){
+                  // 三连星及以上交给 markdown-it 的 delimiter 规则处理，避免把
+                  // ***粗体*** 拆成错误的 strong/em 组合。
+                  if (src.charCodeAt(j + 2) === 0x2A || (j > 0 && src.charCodeAt(j - 1) === 0x2A)){
+                    j++;
+                    continue;
+                  }
+                  var delims = state.scanDelims(j, true);
+                  if (nested > 0){
+                    if (delims.can_close){ nested--; j += 2; continue; }
+                    if (delims.can_open){ nested++; j += 2; continue; }
+                  } else if (delims.can_close){
+                    return j;
+                  } else if (delims.can_open){
+                    // `**"one"**B` 的闭合符在 CommonMark 里可能被判成
+                    // can_open；只有它前面也是标点时才把它当闭合符。
+                    var prev = j > 0 ? Array.from(src.slice(0, j)).pop() : '';
+                    if (!prev || !window.__mdit.utils.isPunctChar(prev)){
+                      nested++;
+                      j += 2;
                       continue;
                     }
+                    return j;
                   }
-                  buf += content[i];
-                  i++;
+                  j += 2;
+                  continue;
                 }
-                flushBuf();
-                return out;
-              } catch(e) {
-                return defaultTextRender(tokens, idx, options, env, self);
+                j++;
               }
-            };
+              return -1;
+            }
+            function hasUnmatchedStrongOpener(state){
+              // markdown-it 会把一个 `**` run 展开成两个 delimiter 记录，这里按
+              // 连续的 token 记录合并 run，并只统计尚未被后续 run 配对的 opener。
+              // 避免把一个已经用于闭合普通粗体的 `**` 误判成新的标点粗体开头。
+              var delimiters = state.delimiters || [];
+              var balance = 0;
+              var i = 0;
+              while (i < delimiters.length){
+                var d = delimiters[i];
+                if (d.marker !== 0x2A || d.length !== 2){ i++; continue; }
+                var open = d.open;
+                var close = d.close;
+                var j = i + 1;
+                while (j < delimiters.length &&
+                       delimiters[j].marker === d.marker &&
+                       delimiters[j].length === d.length &&
+                       delimiters[j].token === delimiters[j - 1].token + 1){
+                  open = open || delimiters[j].open;
+                  close = close || delimiters[j].close;
+                  j++;
+                }
+                if (close && balance > 0){ balance--; }
+                else if (open){ balance++; }
+                i = j;
+              }
+              return balance > 0;
+            }
+            window.__mdit.inline.ruler.before('emphasis', 'punct_strong', function(state, silent){
+              var start = state.pos;
+              var src = state.src;
+              if (src.charCodeAt(start) !== 0x2A || src.charCodeAt(start + 1) !== 0x2A) { return false; }
+              if (src.charCodeAt(start + 2) === 0x2A || (start > 0 && src.charCodeAt(start - 1) === 0x2A)) { return false; }
+              if (hasUnmatchedStrongOpener(state)) { return false; }
+              var end = findPunctStrongClose(state, start + 2);
+              if (end < 0) { return false; }
+              var inner = src.slice(start + 2, end);
+              if (!inner) { return false; }
+              var chars = Array.from(inner);
+              if (!window.__mdit.utils.isPunctChar(chars[0]) &&
+                  !window.__mdit.utils.isPunctChar(chars[chars.length - 1])) { return false; }
+              // 标准 flanking 已能正确配对时保持原行为；只有任一 delimiter 被标点
+              // 阻断时才接管，尽量减少对 CommonMark 语义的影响。
+              var openDelim = state.scanDelims(start, true);
+              var closeDelim = state.scanDelims(end, true);
+              if (openDelim.can_open && closeDelim.can_close) { return false; }
+              if (silent) { return true; }
+              var openToken = state.push('html_inline', '', 0);
+              openToken.content = '<strong>';
+              // 递归解析到独立 token 数组，再合并到当前 state。不能直接传
+              // state.tokens：markdown-it 的 delimiter.token 是数组内相对索引，
+              // 嵌套解析直接追加会让 postProcess 用相对索引修改错误的 token。
+              var nestedTokens = [];
+              state.md.inline.parse(inner, state.md, state.env, nestedTokens);
+              for (var t = 0; t < nestedTokens.length; t++){
+                nestedTokens[t].level += state.level;
+                state.tokens.push(nestedTokens[t]);
+                state.tokens_meta.push(null);
+              }
+              var closeToken = state.push('html_inline', '', 0);
+              closeToken.content = '</strong>';
+              state.pos = end + 2;
+              return true;
+            });
             // —— 数学公式（$...$ / $$...$$）：在 markdown-it 其他行内规则前拦截，避免
             // breaks 的 <br> 切段、反斜杠转义（\,→,）、强调（*_）等破坏公式源码；
             // 直接用 KaTeX 渲染成 HTML。规则放在 strikethrough 之前（backticks 之后），
