@@ -37,6 +37,8 @@ jobs:
         run: node Tests/run.js
 
       - name: Build app
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
         run: >-
           xcodebuild
           -project MDReview.xcodeproj
