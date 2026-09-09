@@ -1,5 +1,23 @@
 # Changelog
 
+## V1.5.0 — 2026-09-09
+
+应用内自动更新版本：启动检查、手动检查、安全下载与安装重启。
+
+### 更新与关于
+- 新增自定义 About MDReview 页面，显示当前短版本与 Build
+- 每次启动自动检查一次 GitHub 官方稳定 Release；失败静默，不阻塞阅读
+- 新增 About 页与 App 菜单的手动 `Check for Updates…`
+- 发现新版本时弹出版本确认框；`Later` 在本次启动内抑制后续自动提示
+- 仅使用官方 `allanzhang/MDReview` 稳定 Release 与固定 `MDReview-<version>.zip` 资产
+- 下载后校验 GitHub `sha256:` digest、Bundle ID 与更高版本
+- 安装前检测目标目录可写性；通过临时 helper 等待退出、备份替换、失败回滚并重启
+
+### 测试
+- 新增 tag 解析与数字版本比较测试
+- 新增流式 SHA256 文件摘要测试，避免大 ZIP 整包进入内存
+- 既有渲染器回归测试与 CommonMark 门禁继续通过
+
 ## v1.4.1 — 2026-09-09
 
 渲染稳定性与回归门禁修复版。

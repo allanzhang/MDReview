@@ -24,6 +24,17 @@ struct MDReviewApp: App {
     @ObservedObject private var doc = DocState.shared
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About MDReview") {
+                AboutWindowController.shared.show()
+            }
+            Button("Check for Updates…") {
+                AboutWindowController.shared.show()
+                Task { @MainActor in
+                    await UpdateManager.shared.checkForUpdates(manual: true)
+                }
+            }
+        }
         CommandGroup(replacing: .newItem) {
             Button { postMenuAction(.openPanel) } label: {
                 Label("Open…", systemImage: "folder")
@@ -149,6 +160,12 @@ struct WindowAppearanceModifier: ViewModifier {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 第一版不支持 Tab：显式关闭自动窗口标签，菜单不出现 New Tab / 标签栏等命令
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        // 每次启动固定检查一次；失败静默，不阻塞文档打开。
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await UpdateManager.shared.checkForUpdates(manual: false)
+        }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
