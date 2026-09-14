@@ -46,7 +46,7 @@ struct ContentView: View {
                 .allowsHitTesting(false)
             }
         }
-        // 打开文档与外部编辑热更新都会更新 rawText，统一由此触发渲染（url 变化必伴随 rawText 变化）
+        // 打开文档与手动刷新后的内容变化都会更新 rawText，统一由此触发渲染（url 变化必伴随 rawText 变化）
         .onChange(of: doc.rawText) { _, _ in
             wordCount = Self.countWords(doc.rawText)
             DispatchQueue.main.async { renderCurrent() }
@@ -273,12 +273,6 @@ struct ContentView: View {
                 FontSizeControls(scale: $doc.fontSizeScale)
             }
         }
-        // 热更新提示：外部保存瞬间在字号控件下方闪 2s「Updated」
-        .overlay(alignment: .topTrailing) {
-            HotReloadToast()
-                .padding(.top, 84)
-                .padding(.trailing, 12)
-        }
         .onChange(of: searchText) { _, newValue in
             // 防抖：连续输入不触发搜索，停顿 250ms 后执行一次（避免大文档全文遍历打满 WebContent）
             searchDebounce?.cancel()
@@ -329,7 +323,15 @@ struct ContentView: View {
             Button {
                 refreshDocument()
             } label: {
-                Image(systemName: "arrow.clockwise")
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "arrow.clockwise")
+                    if doc.hasPendingFileUpdate {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 3, y: -3)
+                    }
+                }
             }
             .help("Reload from Disk")
             .disabled(doc.url == nil)
@@ -416,15 +418,20 @@ struct ContentView: View {
     }
 
     /// 手动刷新：重新读盘并重渲染。内容有变化时更新 rawText（由 onChange 统一触发渲染）；
-    /// 内容未变化或读取失败时保持当前内容，仅强制重渲染（文件监听热更新的手动兜底）。
+    /// 内容未变化时保持当前内容，仅强制重渲染；读取失败则保留更新红点。
     private func refreshDocument() {
         guard let url = doc.url else { return }
         Task {
-            let text = try? String(contentsOf: url, encoding: .utf8)
-            if let text, text != doc.rawText {
-                doc.rawText = text
-            } else {
-                renderCurrent()
+            do {
+                let text = try String(contentsOf: url, encoding: .utf8)
+                if text != doc.rawText {
+                    doc.rawText = text
+                } else {
+                    renderCurrent()
+                }
+                doc.clearPendingFileUpdate()
+            } catch {
+                // 读盘失败时保留红点，等待用户重试。
             }
         }
     }
@@ -722,38 +729,6 @@ private struct OutlineLoadingView: View {
             result.append((level, body))
         }
         return result
-    }
-}
-
-/// 热更新提示：文档被外部编辑器保存并自动重载后，右上角闪现 2s「Updated」微型标签。
-private struct HotReloadToast: View {
-    @EnvironmentObject private var doc: DocState
-    @State private var visible = false
-    @State private var hideTask: Task<Void, Never>?
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        Text("Updated")
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(Color.primary.opacity(0.75))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background {
-                Capsule().fill(scheme == .dark ? Color(white: 0.26) : Color.white)
-                    .overlay { Capsule().stroke(scheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.10)) }
-            }
-            .opacity(visible ? 1 : 0)
-            .offset(y: visible ? 0 : -4)
-            .animation(.easeOut(duration: 0.18), value: visible)
-            .allowsHitTesting(false)
-            .onChange(of: doc.hotReloadTick) { _, _ in
-                hideTask?.cancel()
-                visible = true
-                hideTask = Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(2))
-                    visible = false
-                }
-            }
     }
 }
 

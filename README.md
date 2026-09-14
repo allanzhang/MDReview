@@ -42,7 +42,7 @@ SwiftUI + WKWebView 原生 macOS 应用。定位：**AI 生成 `.md` 的只读�
 - **外部编辑器**：`Cmd+E`，优先 Cursor / VSCode，未装退回系统默认关联应用
 - **Markdown 内链本地打开**：`[x](other.md)` 点击直接在本 app 打开（相对/绝对路径均可），其他本地文件点击在 Finder 定位，http(s)/mailto 走系统浏览器——WebView 只呈现内容，不做整页导航
 - **阅读进度记忆**：按章节 id 存 **Swift/UserDefaults**（非 localStorage），重开自动回到上次位置
-- **文件热更新**：监听当前文件，外部编辑器保存后 400ms 防抖自动重载；文件删除自动停止监听；重载后右上角闪现 2s「Updated」提示
+- **文件更新提示**：监听当前文件，外部编辑器保存后 400ms 防抖在刷新按钮显示红点；文件删除自动停止监听；点击刷新后重新读盘并清除红点
 - **右键菜单**：正文（Copy / **Copy as Quote**（选中转 `> 引用`，直接黏给 AI） / Reveal in Finder / 外部编辑器 / 导出 HTML/PDF）、Recent 行（显示位置 / 复制路径 / 外部编辑器 / 移除）、Outline 行（复制标题）
 
 ### 外观
@@ -78,7 +78,7 @@ MDReview/                         (工程根目录)
 ├── README.md
 └── Sources/                     (源码文件夹)
     ├── MDReviewApp.swift        (App 入口 + 菜单命令 + AppKit 外观控制)
-    ├── DocState.swift           (全局状态 + 文件热更新 + 最近/侧栏/上次文档记忆)
+    ├── DocState.swift           (全局状态 + 文件更新标记 + 最近/侧栏/上次文档记忆)
     ├── MarkdownRenderer.swift   (渲染内核：JS 注入 / 分块渲染 / 搜索 / 导出 / 进度回传)
     ├── ContentView.swift        (主界面：工具栏 / 侧栏 / 搜索条 / 空状态 / 进度条)
     ├── OutlineView.swift        (大纲列表)

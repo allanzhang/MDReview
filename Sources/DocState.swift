@@ -39,16 +39,16 @@ enum AppearanceMode: String {
     @Published var appearance: AppearanceMode = .system
     /// 阅读区字号缩放（0.8×~1.5×，步进 0.1）。不持久化，与外观"临时覆盖"语义一致。
     @Published var fontSizeScale: Double = 1.0
-    /// 外部修改热重载计数（右上角「Updated」提示用；仅自增，由视图观察变化）。
-    @Published var hotReloadTick = 0
+    /// 当前文件在磁盘上已有更新，等待用户手动刷新。
+    @Published var hasPendingFileUpdate = false
 
     private let recentKey = "mdreview.recent"
     private let recentMax = 30
     private let lastUrlKey = "mdreview.lastUrl"
     private let sidebarKey = "mdreview.sidebarVisible"
-    /// 当前文件系统监听（外部编辑器保存后自动重载，AI 工作流刚需）。
+    /// 当前文件系统监听（外部编辑器保存后提示用户刷新）。
     private var fileMonitor: DispatchSourceFileSystemObject?
-    private var reloadWorkItem: DispatchWorkItem?
+    private var updateFlagWorkItem: DispatchWorkItem?
     /// 异步打开竞态防护：记录最近一次请求的 URL，读盘完成时若已被新请求覆盖则丢弃旧结果。
     private var pendingOpenURL: URL?
     /// 启动时是否已由系统打开文件（Finder 双击）：若是则不再自动恢复上次文档。
@@ -82,6 +82,7 @@ enum AppearanceMode: String {
     func open(_ url: URL) {
         guard url.pathExtension.lowercased() == "md" ||
               url.pathExtension.lowercased() == "markdown" else { return }
+        clearPendingFileUpdate()
         startMonitoring(url)
         pendingOpenURL = url
         // 后台读盘避免大文件阻塞主线程；完成回调经 pendingOpenURL 比对丢弃过期结果
@@ -109,7 +110,7 @@ enum AppearanceMode: String {
         }
     }
 
-    /// 建立对当前文件的磁盘监听（.write/.delete/.rename），外部保存后防抖重载。
+    /// 建立对当前文件的磁盘监听（.write/.delete/.rename），外部保存后防抖标记更新。
     private func startMonitoring(_ url: URL) {
         fileMonitor?.cancel()
         fileMonitor = nil
@@ -121,24 +122,24 @@ enum AppearanceMode: String {
             queue: .main
         )
         source.setEventHandler { [weak self] in
-            Task { @MainActor in self?.scheduleReload() }
+            Task { @MainActor in self?.scheduleUpdateFlag() }
         }
         source.setCancelHandler { close(fd) }
         source.resume()
         fileMonitor = source
     }
 
-    /// 防抖：外部编辑器可能连续写入，400ms 内合并为一次重载。
-    private func scheduleReload() {
-        reloadWorkItem?.cancel()
+    /// 防抖：外部编辑器可能连续写入，400ms 内合并为一次更新标记。
+    private func scheduleUpdateFlag() {
+        updateFlagWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
-            Task { @MainActor in self?.reloadFromDisk() }
+            Task { @MainActor in self?.markPendingUpdate() }
         }
-        reloadWorkItem = item
+        updateFlagWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: item)
     }
 
-    private func reloadFromDisk() {
+    private func markPendingUpdate() {
         guard let url else { return }
         guard FileManager.default.fileExists(atPath: url.path) else {
             // 文件被删除/重命名：停止监听，避免持续报错
@@ -146,15 +147,14 @@ enum AppearanceMode: String {
             fileMonitor = nil
             return
         }
-        // 后台读盘避免大文件热更新阻塞主线程
-        Task.detached(priority: .utility) { [weak self] in
-            let text = try? String(contentsOf: url, encoding: .utf8)
-            await MainActor.run {
-                guard let self, let text, text != self.rawText else { return }
-                self.hotReloadTick += 1
-                self.rawText = text
-            }
-        }
+        hasPendingFileUpdate = true
+    }
+
+    /// 清理待更新标记，同时取消尚未触发的防抖任务，避免旧文件事件误标当前文件。
+    func clearPendingFileUpdate() {
+        updateFlagWorkItem?.cancel()
+        updateFlagWorkItem = nil
+        hasPendingFileUpdate = false
     }
 
     /// 从 UserDefaults 恢复最近文件（路径可能因文件被移动而失效，故做一次可达性过滤）。
