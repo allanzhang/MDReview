@@ -51,8 +51,34 @@ function runSwiftIntegrityTests() {
   if (run.status !== 0) process.exit(run.status || 1);
 }
 
+function runSwiftFileMonitorTests() {
+  const moduleCache = fs.mkdtempSync(path.join(os.tmpdir(), 'mdreview-swift-cache-'));
+  const output = path.join(os.tmpdir(), `mdreview-file-monitor-tests-${process.pid}`);
+  const compile = spawnSync('swiftc', [
+    '-swift-version', '5',
+    '-parse-as-library',
+    '-module-cache-path', moduleCache,
+    path.join(__dirname, '..', 'Sources', 'DocState.swift'),
+    path.join(__dirname, 'DocStateFileMonitorTests.swift'),
+    '-framework', 'AppKit',
+    '-framework', 'SwiftUI',
+    '-o', output
+  ], { stdio: 'inherit' });
+
+  if (compile.error) throw compile.error;
+  if (compile.status !== 0) process.exit(compile.status || 1);
+
+  const run = spawnSync(output, [], { stdio: 'inherit' });
+  fs.rmSync(moduleCache, { recursive: true, force: true });
+  fs.rmSync(output, { force: true });
+
+  if (run.error) throw run.error;
+  if (run.status !== 0) process.exit(run.status || 1);
+}
+
 runSwiftVersionTests();
 runSwiftIntegrityTests();
+runSwiftFileMonitorTests();
 
 const suites = [
   'markdown-renderer-regression.js',

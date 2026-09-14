@@ -122,7 +122,12 @@ enum AppearanceMode: String {
             queue: .main
         )
         source.setEventHandler { [weak self] in
-            Task { @MainActor in self?.scheduleUpdateFlag() }
+            Task { @MainActor in
+                guard let self, self.url == url else { return }
+                // 编辑器常用原子替换保存；重新打开 fd，避免旧 inode 的监听在首次事件后失效。
+                self.startMonitoring(url)
+                self.scheduleUpdateFlag()
+            }
         }
         source.setCancelHandler { close(fd) }
         source.resume()
