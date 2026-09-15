@@ -217,6 +217,13 @@ struct ContentView: View {
         // 侧栏用不透明实底（系统 windowBackgroundColor，light/dark 自动适配），
         // 不用系统 sidebar 玻璃材质：厚实、边界清晰，与内容区明确分界
         .background(Color(nsColor: .windowBackgroundColor))
+        // macOS 27 起系统分栏分隔不再稳定可见，显式补回侧栏边界。
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Color.primary.opacity(systemScheme == .dark ? 0.12 : 0.14))
+                .frame(width: 1)
+                .allowsHitTesting(false)
+        }
     }
 
     @ViewBuilder
@@ -248,6 +255,15 @@ struct ContentView: View {
             }
             // "大纲思写"加载骨架：盖在最上层，渲染完成整体淡出（正文已在底下）
             OutlineLoadingHost(renderer: renderer, text: doc.rawText)
+        }
+        // 正文左侧承接侧栏投影，恢复 macOS 27 丢失的悬浮层级。
+        .overlay(alignment: .leading) {
+            LinearGradient(
+                colors: [Color.black.opacity(systemScheme == .dark ? 0.24 : 0.07), .clear],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .frame(width: 10)
+            .allowsHitTesting(false)
         }
         .contextMenu {
             Button("Copy") { copySelection() }
