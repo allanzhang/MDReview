@@ -24,7 +24,10 @@ final class UpdateManager: ObservableObject {
     static let shared = UpdateManager()
 
     @Published private(set) var status: UpdateStatus = .idle
-    @Published private(set) var notice: String?
+    @Published private(set) var noticeKey: String?
+    var notice: String? {
+        noticeKey.map { L10n.string($0, language: L10n.currentLanguage) }
+    }
 
     private let session: URLSession
     private let fileManager: FileManager
@@ -64,19 +67,19 @@ final class UpdateManager: ObservableObject {
     var statusText: String {
         switch status {
         case .idle:
-            return "Automatic update checks are enabled."
+            return L10n.string("Automatic update checks are enabled.", language: L10n.currentLanguage)
         case .checking:
-            return "Checking for updates…"
+            return L10n.string("Checking for updates…", language: L10n.currentLanguage)
         case .upToDate:
-            return "MDReview is up to date."
+            return L10n.string("MDReview is up to date.", language: L10n.currentLanguage)
         case .updateAvailable(let update):
-            return "Version \(update.version) is available."
+            return L10n.format("Version %@ is available.", language: L10n.currentLanguage, update.version.description)
         case .downloading(let progress):
-            return "Downloading update… \(Int((progress * 100).rounded()))%"
+            return L10n.format("Downloading update… %lld%%", language: L10n.currentLanguage, Int((progress * 100).rounded()))
         case .validating:
-            return "Validating update…"
+            return L10n.string("Validating update…", language: L10n.currentLanguage)
         case .installing:
-            return "Installing update and restarting…"
+            return L10n.string("Installing update and restarting…", language: L10n.currentLanguage)
         case .failed(let message):
             return message
         }
@@ -84,19 +87,19 @@ final class UpdateManager: ObservableObject {
 
     func checkForUpdates(manual: Bool) async {
         if manual, case .updateAvailable(let update) = status {
-            notice = nil
+            noticeKey = nil
             presentPrompt(for: update)
             return
         }
 
         guard !isBusy else {
             if manual {
-                notice = "An update check is already in progress."
+                noticeKey = "An update check is already in progress."
             }
             return
         }
 
-        notice = nil
+        noticeKey = nil
         status = .checking
 
         do {
@@ -176,10 +179,14 @@ final class UpdateManager: ObservableObject {
         defer { isPresentingPrompt = false }
 
         let alert = NSAlert()
-        alert.messageText = "A new version of MDReview is available."
-        alert.informativeText = "You have version \(currentShortVersion). Version \(update.version) is available."
-        alert.addButton(withTitle: "Update Now")
-        alert.addButton(withTitle: "Later")
+        let language = L10n.currentLanguage
+        alert.messageText = L10n.string("A new version of MDReview is available.", language: language)
+        alert.informativeText = L10n.format("You have version %@. Version %@ is available.",
+                                            language: language,
+                                            currentShortVersion,
+                                            update.version.description)
+        alert.addButton(withTitle: L10n.string("Update Now", language: language))
+        alert.addButton(withTitle: L10n.string("Later", language: language))
 
         if alert.runModal() == .alertFirstButtonReturn {
             AboutWindowController.shared.show()
@@ -570,33 +577,35 @@ private enum UpdateError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
-            return "The update server returned an invalid response."
+            return L10n.string("The update server returned an invalid response.", language: L10n.currentLanguage)
         case .httpStatus(let statusCode):
-            return "The update server returned HTTP \(statusCode). Please try again later."
+            return L10n.format("The update server returned HTTP %lld. Please try again later.", language: L10n.currentLanguage, statusCode)
         case .invalidRelease:
-            return "The latest release could not be read. Please try again later."
+            return L10n.string("The latest release could not be read. Please try again later.", language: L10n.currentLanguage)
         case .invalidVersion:
-            return "The latest release has an invalid version tag."
+            return L10n.string("The latest release has an invalid version tag.", language: L10n.currentLanguage)
         case .missingAsset(let name):
-            return "The release does not contain the expected update asset: \(name)."
+            return L10n.format("The release does not contain the expected update asset: %@.", language: L10n.currentLanguage, name)
         case .invalidDigest:
-            return "The release does not provide a valid SHA256 digest."
+            return L10n.string("The release does not provide a valid SHA256 digest.", language: L10n.currentLanguage)
         case .downloadFailed:
-            return "The update download failed. Please try again."
+            return L10n.string("The update download failed. Please try again.", language: L10n.currentLanguage)
         case .digestMismatch:
-            return "The downloaded update failed SHA256 verification."
+            return L10n.string("The downloaded update failed SHA256 verification.", language: L10n.currentLanguage)
         case .extractionFailed(let message):
-            return message.isEmpty ? "The downloaded update could not be extracted." : "The update could not be extracted: \(message)"
+            return message.isEmpty
+                ? L10n.string("The downloaded update could not be extracted.", language: L10n.currentLanguage)
+                : L10n.format("The update could not be extracted: %@", language: L10n.currentLanguage, message)
         case .invalidBundle:
-            return "The downloaded app failed bundle identifier or version validation."
+            return L10n.string("The downloaded app failed bundle identifier or version validation.", language: L10n.currentLanguage)
         case .invalidInstallLocation:
-            return "MDReview is running from an unsupported location and cannot be updated in place."
+            return L10n.string("MDReview is running from an unsupported location and cannot be updated in place.", language: L10n.currentLanguage)
         case .installLocationNotWritable:
-            return "The MDReview application folder is not writable, so the update cannot be installed."
+            return L10n.string("The MDReview application folder is not writable, so the update cannot be installed.", language: L10n.currentLanguage)
         case .helperFailed:
-            return "The update helper could not be started. MDReview was not changed."
+            return L10n.string("The update helper could not be started. MDReview was not changed.", language: L10n.currentLanguage)
         case .processLaunchFailed:
-            return "A required system tool could not be started."
+            return L10n.string("A required system tool could not be started.", language: L10n.currentLanguage)
         }
     }
 }

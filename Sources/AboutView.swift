@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 struct AboutView: View {
     @ObservedObject private var updateManager = UpdateManager.shared
+    @ObservedObject private var doc = DocState.shared
 
     var body: some View {
         VStack(spacing: 14) {
@@ -15,9 +16,26 @@ struct AboutView: View {
             VStack(spacing: 4) {
                 Text("MDReview")
                     .font(.title2.weight(.semibold))
-                Text("Version \(updateManager.currentShortVersion) (\(updateManager.currentBuildNumber))")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(L10n.format("Version %@ (%@)",
+                                     language: doc.resolvedLanguage,
+                                     updateManager.currentShortVersion,
+                                     updateManager.currentBuildNumber))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        NSWorkspace.shared.open(AboutLinks.githubProject)
+                    } label: {
+                        Image("GitHubIcon")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 16, height: 16)
+                            .foregroundStyle(Color.primary.opacity(0.78))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             Text(updateManager.statusText)
@@ -43,7 +61,7 @@ struct AboutView: View {
                     await updateManager.checkForUpdates(manual: true)
                 }
             } label: {
-                Text("Check for Updates…")
+                Text(L10n.string("Check for Updates…", language: doc.resolvedLanguage))
                     .frame(minWidth: 160)
             }
             .buttonStyle(.borderedProminent)
@@ -51,6 +69,9 @@ struct AboutView: View {
         }
         .padding(24)
         .frame(width: 360)
+        .background(AboutWindowTitleSetter(
+            title: L10n.string("About MDReview", language: doc.resolvedLanguage)
+        ))
     }
 
     private var statusColor: Color {
@@ -61,6 +82,18 @@ struct AboutView: View {
             return .red
         }
         return .secondary
+    }
+}
+
+private struct AboutWindowTitleSetter: NSViewRepresentable {
+    let title: String
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            nsView.window?.title = title
+        }
     }
 }
 
@@ -76,7 +109,7 @@ final class AboutWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "About MDReview"
+        window.title = L10n.string("About MDReview", language: DocState.shared.resolvedLanguage)
         window.contentView = hostingView
         window.isReleasedWhenClosed = false
         window.center()

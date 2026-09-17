@@ -179,6 +179,7 @@ struct OutlineView: View {
 /// 单行大纲项：整行可点击（含空白与缩进），hover/激活行圆角底色，文字颜色不因状态变化。
 /// 层级由【缩进 + 字号 + 字重 + 文字色】四重区分；有子标题的节点左侧渲染折叠三角（14pt 占位，叶子留空对齐）。
 private struct OutlineRow: View {
+    @EnvironmentObject private var doc: DocState
     let node: OutlineNode
     let isCollapsed: Bool
     let isActive: Bool
@@ -202,12 +203,12 @@ private struct OutlineRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(isCollapsed ? "Expand" : "Collapse")
+                .help(L10n.string(isCollapsed ? "Expand" : "Collapse", language: doc.resolvedLanguage))
             } else {
                 Color.clear
                     .frame(width: 14, height: 14)
             }
-            Text(node.heading.text.isEmpty ? "(Untitled)" : node.heading.text)
+            Text(node.heading.text.isEmpty ? L10n.string("(Untitled)", language: doc.resolvedLanguage) : node.heading.text)
                 .font(.system(size: style.fontSize, weight: style.fontWeight))
                 .foregroundStyle(style.color)
                 .lineLimit(1)               // 强制单行
@@ -232,9 +233,9 @@ private struct OutlineRow: View {
         .animation(.easeOut(duration: 0.12), value: isActive)
         .onHover { isHovering = $0 }
         // hover 弹出完整标题 tooltip（原生 macOS 帮助提示）
-        .help(node.heading.text.isEmpty ? "(Untitled)" : node.heading.text)
+        .help(node.heading.text.isEmpty ? L10n.string("(Untitled)", language: doc.resolvedLanguage) : node.heading.text)
         .contextMenu {
-            Button("Copy Heading") {
+            Button(L10n.string("Copy Heading", language: doc.resolvedLanguage)) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(node.heading.text, forType: .string)
             }

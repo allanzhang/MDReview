@@ -24,13 +24,14 @@ struct RecentView: View {
             .padding(.horizontal, 5)
             .padding(.vertical, 3)
         }
-        .navigationTitle("Recent")
+        .navigationTitle(L10n.string("Recent", language: doc.resolvedLanguage))
     }
 }
 
 /// 单行最近文件：文件名 + 所在目录，整行可点击，hover 轻量高亮。
 /// 文字留白充足（horizontal 12 + vertical 7）；首/尾行背景部分圆角。
 private struct RecentRow: View {
+    @EnvironmentObject private var doc: DocState
     let url: URL
     let isFirst: Bool
     let isLast: Bool
@@ -65,14 +66,14 @@ private struct RecentRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-            Button("Copy Path") {
+            Button(L10n.string("Reveal in Finder", language: doc.resolvedLanguage)) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+            Button(L10n.string("Copy Path", language: doc.resolvedLanguage)) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(url.path, forType: .string)
             }
-            Button("Open in External Editor") { DocState.shared.openInExternalEditor(url) }
+            Button(L10n.string("Open in External Editor", language: doc.resolvedLanguage)) { DocState.shared.openInExternalEditor(url) }
             Divider()
-            Button("Remove from Recent") { DocState.shared.removeRecent(url) }
+            Button(L10n.string("Remove from Recent", language: doc.resolvedLanguage)) { DocState.shared.removeRecent(url) }
         }
         .background {
             if isHovering {

@@ -22,7 +22,16 @@ enum AppearanceMode: String {
 /// 全局文档状态：当前打开的 .md、原文、最近文件列表、大纲显隐。
 /// 单例：AppDelegate 的 openURLs 与所有视图共享同一份状态。
 @MainActor final class DocState: ObservableObject {
-    static let shared = DocState()
+    static let shared = makeApplicationState()
+
+    static func makeApplicationState(
+        defaults: UserDefaults = .standard,
+        preferredLanguages: @escaping () -> [String] = { SystemLanguage.preferredLanguages() }
+    ) -> DocState {
+        // 未完成版本可能写入过进程级语言覆盖；必须在首次读取系统语言前清理。
+        defaults.removeObject(forKey: "AppleLanguages")
+        return DocState(defaults: defaults, preferredLanguages: preferredLanguages)
+    }
 
     @Published var url: URL?
     @Published var rawText: String = ""
@@ -39,9 +48,21 @@ enum AppearanceMode: String {
     @Published var appearance: AppearanceMode = .system
     /// 阅读区字号缩放（0.8×~1.5×，步进 0.1）。不持久化，与外观"临时覆盖"语义一致。
     @Published var fontSizeScale: Double = 1.0
+    /// 界面语言：跟随系统 / 中文 / English。手动选择持久化，默认跟随系统。
+    @Published var language: AppLanguage = .system {
+        didSet {
+            guard language != oldValue else { return }
+            defaults.set(language.rawValue, forKey: AppLanguage.defaultsKey)
+            updateResolvedLanguage()
+        }
+    }
+    /// 当前实际显示语言。与持久化的选择模式分离，以便系统语言变化时主动发布刷新。
+    @Published private(set) var resolvedLanguage: AppLanguage = .english
     /// 当前文件在磁盘上已有更新，等待用户手动刷新。
     @Published var hasPendingFileUpdate = false
 
+    private let defaults: UserDefaults
+    private let preferredLanguages: () -> [String]
     private let recentKey = "mdreview.recent"
     private let recentMax = 30
     private let lastUrlKey = "mdreview.lastUrl"
@@ -60,11 +81,46 @@ enum AppearanceMode: String {
         return FileManager.default.fileExists(atPath: path) ? url : nil
     }
 
-    init() {
+    init(
+        defaults: UserDefaults = .standard,
+        preferredLanguages: @escaping () -> [String] = { SystemLanguage.preferredLanguages() }
+    ) {
+        self.defaults = defaults
+        self.preferredLanguages = preferredLanguages
+        let storedLanguage = AppLanguage.load(
+            from: defaults.string(forKey: AppLanguage.defaultsKey)
+        )
+        language = storedLanguage
+        resolvedLanguage = storedLanguage.resolved(
+            preferredLanguages: preferredLanguages()
+        )
         loadRecent()
         if UserDefaults.standard.object(forKey: sidebarKey) as? Bool == false {
             columnVisibility = .detailOnly
         }
+    }
+
+    var locale: Locale {
+        resolvedLanguage.locale
+    }
+
+    /// 语言菜单入口：重复选择当前项时保持文档、滚动位置和状态不变。
+    func setLanguage(_ newValue: AppLanguage) {
+        guard language != newValue else { return }
+        language = newValue
+    }
+
+    /// 系统语言变化时仅刷新 Follow System；手动中文/英文保持不变。
+    func refreshSystemLanguage() {
+        guard language == .system else { return }
+        updateResolvedLanguage()
+    }
+
+    private func updateResolvedLanguage() {
+        let newValue = language.resolved(preferredLanguages: preferredLanguages())
+        guard newValue != resolvedLanguage else { return }
+        resolvedLanguage = newValue
+        NotificationCenter.default.post(name: .mdreviewLanguageChanged, object: newValue)
     }
 
     /// 外观按钮点击：System → 切到当前系统外观的反面（临时覆盖）；手动 → 回到 System。
@@ -103,7 +159,8 @@ enum AppearanceMode: String {
                     if self.recent.count > self.recentMax { self.recent.removeLast() }
                     self.saveRecent()
                 } else {
-                    self.rawText = "// Cannot read file:\n\(errorMsg ?? "Unknown error")"
+                    let message = errorMsg ?? L10n.string("Unknown error", language: self.resolvedLanguage)
+                    self.rawText = "// " + L10n.format("Cannot read file: %@", language: self.resolvedLanguage, message)
                     self.url = url
                 }
             }

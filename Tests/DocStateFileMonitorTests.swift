@@ -23,9 +23,25 @@ struct DocStateFileMonitorTests {
         let fixtureURL = directory.appendingPathComponent("fixture.md")
         try "initial".write(to: fixtureURL, atomically: true, encoding: .utf8)
 
-        let state = DocState()
+        let suiteName = "mdreview.language-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let state = DocState(defaults: defaults)
         state.open(fixtureURL)
         try await waitUntil("document opens") { state.url == fixtureURL }
+
+        let originalURL = state.url
+        let originalText = state.rawText
+        let originalSourceMode = state.showSource
+        state.setLanguage(.chinese)
+        guard state.url == originalURL,
+              state.rawText == originalText,
+              state.showSource == originalSourceMode,
+              state.language == .chinese else {
+            throw TestError.stateChanged
+        }
+        state.setLanguage(.chinese)
 
         try "first change".write(to: fixtureURL, atomically: true, encoding: .utf8)
         try await waitUntil("first atomic save marks the file as updated") { state.hasPendingFileUpdate }
@@ -54,11 +70,14 @@ struct DocStateFileMonitorTests {
 
     private enum TestError: LocalizedError {
         case timeout(String)
+        case stateChanged
 
         var errorDescription: String? {
             switch self {
             case .timeout(let description):
                 return "timed out waiting for \(description)"
+            case .stateChanged:
+                return "language change modified document state"
             }
         }
     }

@@ -5,6 +5,7 @@ import SwiftUI
 struct NativeSearchField: NSViewRepresentable {
     @Binding var text: String
     let focusSignal: UUID
+    let placeholder: String
     let onNext: () -> Void
     let onPrev: () -> Void
     let onCancel: () -> Void
@@ -15,7 +16,7 @@ struct NativeSearchField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSSearchField {
         let field = NSSearchField()
-        field.placeholderString = "Search"
+        field.placeholderString = placeholder
         field.sendsSearchStringImmediately = true
         field.sendsWholeSearchString = false
         field.delegate = context.coordinator
@@ -29,6 +30,9 @@ struct NativeSearchField: NSViewRepresentable {
     func updateNSView(_ field: NSSearchField, context: Context) {
         if field.stringValue != text {
             field.stringValue = text
+        }
+        if field.placeholderString != placeholder {
+            field.placeholderString = placeholder
         }
         if context.coordinator.lastFocus != focusSignal {
             context.coordinator.lastFocus = focusSignal
@@ -105,6 +109,7 @@ struct NativeSearchField: NSViewRepresentable {
 /// 搜索框 + 计数/无结果提示，整体放在工具栏里。
 struct SearchFieldToolbarItem: View {
     @ObservedObject var renderer: MarkdownRenderer
+    @EnvironmentObject private var doc: DocState
     @Binding var text: String
     @Binding var focusSignal: UUID
     let searchNext: () -> Void
@@ -115,6 +120,7 @@ struct SearchFieldToolbarItem: View {
         ZStack(alignment: .trailing) {
             NativeSearchField(text: $text,
                               focusSignal: focusSignal,
+                              placeholder: L10n.string("Search", language: doc.resolvedLanguage),
                               onNext: searchNext,
                               onPrev: searchPrev,
                               onCancel: onCancel)

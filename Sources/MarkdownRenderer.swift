@@ -47,16 +47,17 @@ final class MarkdownWebView: WKWebView {
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(makeItem("Copy", #selector(copySelection(_:))))
-        menu.addItem(makeItem("Copy as Quote", #selector(copyAsQuote(_:))))
+        let language = L10n.currentLanguage
+        menu.addItem(makeItem(L10n.string("Copy", language: language), #selector(copySelection(_:))))
+        menu.addItem(makeItem(L10n.string("Copy as Quote", language: language), #selector(copyAsQuote(_:))))
         menu.addItem(.separator())
-        menu.addItem(makeItem("Toggle Source / Rendered", #selector(toggleSource(_:))))
+        menu.addItem(makeItem(L10n.string("Toggle Source / Rendered", language: language), #selector(toggleSource(_:))))
         menu.addItem(.separator())
-        menu.addItem(makeItem("Reveal in Finder", #selector(revealInFinder(_:))))
-        menu.addItem(makeItem("Open in External Editor", #selector(openInExternalEditor(_:))))
+        menu.addItem(makeItem(L10n.string("Reveal in Finder", language: language), #selector(revealInFinder(_:))))
+        menu.addItem(makeItem(L10n.string("Open in External Editor", language: language), #selector(openInExternalEditor(_:))))
         menu.addItem(.separator())
-        menu.addItem(makeItem("Export as HTML…", #selector(exportHTML(_:))))
-        menu.addItem(makeItem("Export as PDF…", #selector(exportPDF(_:))))
+        menu.addItem(makeItem(L10n.string("Export as HTML…", language: language), #selector(exportHTML(_:))))
+        menu.addItem(makeItem(L10n.string("Export as PDF…", language: language), #selector(exportPDF(_:))))
         return menu
     }
 
@@ -1302,9 +1303,9 @@ enum ExportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .pageNotLoaded:
-            return "The document is still rendering. Try again in a moment."
+            return L10n.string("The document is still rendering. Try again in a moment.", language: L10n.currentLanguage)
         case .pdfGenerationFailed:
-            return "Failed to generate PDF."
+            return L10n.string("Failed to generate PDF.", language: L10n.currentLanguage)
         }
     }
 }

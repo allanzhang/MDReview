@@ -137,7 +137,9 @@ struct ContentView: View {
     private var subtitleText: String {
         guard let url = doc.url else { return "" }
         let dir = url.deletingLastPathComponent().path
-        return wordCount > 0 ? "\(dir) · \(wordCount) words" : dir
+        return wordCount > 0
+            ? L10n.format("%@ · %lld words", language: doc.resolvedLanguage, dir, wordCount)
+            : dir
     }
 
     /// ⌘F 聚焦工具栏原生搜索框；若文档有选中文字则预填搜索词。
@@ -197,6 +199,13 @@ struct ContentView: View {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    /// 侧栏面板底色：浅色下是比内容区更灰一档的面板色（Codex 式分栏），深色沿用系统色。
+    private var sidebarPanelColor: Color {
+        systemScheme == .dark
+            ? Color(nsColor: .windowBackgroundColor)
+            : Color(red: 242 / 255, green: 242 / 255, blue: 243 / 255)
+    }
+
     @ViewBuilder
     private var sidebar: some View {
         VStack(spacing: 0) {
@@ -210,17 +219,17 @@ struct ContentView: View {
                 RecentView()
             }
         }
-        // 移除系统默认加在工具栏的 sidebar toggle，改由 detail panel 控制
+        // 系统默认 sidebar toggle 不用；侧栏操作留在 Content Panel 工具栏。
         .toolbar(removing: .sidebarToggle)
         // 侧栏最小宽度：防 Outline/History 按钮文字换行（拉到最窄也不难看）
         .navigationSplitViewColumnWidth(min: 200, ideal: 250)
-        // 侧栏用不透明实底（系统 windowBackgroundColor，light/dark 自动适配），
-        // 不用系统 sidebar 玻璃材质：厚实、边界清晰，与内容区明确分界
-        .background(Color(nsColor: .windowBackgroundColor))
+        // 侧栏用不透明实底：浅色下用显式浅灰面板色（系统 windowBackgroundColor 在当前系统为纯白，
+        // 与内容区无法区分）；深色沿用系统 windowBackgroundColor。
+        .background(sidebarPanelColor)
         // macOS 27 起系统分栏分隔不再稳定可见，显式补回侧栏边界。
         .overlay(alignment: .trailing) {
             Rectangle()
-                .fill(Color.primary.opacity(systemScheme == .dark ? 0.12 : 0.14))
+                .fill(Color.primary.opacity(systemScheme == .dark ? 0.10 : 0.12))
                 .frame(width: 1)
                 .allowsHitTesting(false)
         }
@@ -256,27 +265,18 @@ struct ContentView: View {
             // "大纲思写"加载骨架：盖在最上层，渲染完成整体淡出（正文已在底下）
             OutlineLoadingHost(renderer: renderer, text: doc.rawText)
         }
-        // 正文左侧承接侧栏投影，恢复 macOS 27 丢失的悬浮层级。
-        .overlay(alignment: .leading) {
-            LinearGradient(
-                colors: [Color.black.opacity(systemScheme == .dark ? 0.24 : 0.07), .clear],
-                startPoint: .leading, endPoint: .trailing
-            )
-            .frame(width: 10)
-            .allowsHitTesting(false)
-        }
         .contextMenu {
-            Button("Copy") { copySelection() }
+            Button(L10n.string("Copy", language: doc.resolvedLanguage)) { copySelection() }
             if doc.url != nil {
-                Button(doc.showSource ? "View Rendered" : "View Source") {
+                Button(L10n.string(doc.showSource ? "View Rendered" : "View Source", language: doc.resolvedLanguage)) {
                     toggleSource()
                 }
                 Divider()
-                Button("Reveal in Finder") { revealInFinder() }
-                Button("Open in External Editor") { openInExternalEditor() }
+                Button(L10n.string("Reveal in Finder", language: doc.resolvedLanguage)) { revealInFinder() }
+                Button(L10n.string("Open in External Editor", language: doc.resolvedLanguage)) { openInExternalEditor() }
                 Divider()
-                Button("Export as HTML…") { exportHTML() }
-                Button("Export as PDF…") { exportPDF() }
+                Button(L10n.string("Export as HTML…", language: doc.resolvedLanguage)) { exportHTML() }
+                Button(L10n.string("Export as PDF…", language: doc.resolvedLanguage)) { exportPDF() }
             }
         }
         .overlay(alignment: .topLeading) {
@@ -297,9 +297,9 @@ struct ContentView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: item)
         }
         // 窗口标题：显示当前文件名与所在目录 + 字数（无文档时显示 App 名）
-        .navigationTitle(doc.url?.lastPathComponent ?? "MDReview")
+        .navigationTitle(doc.url?.lastPathComponent ?? L10n.string("MDReview", language: doc.resolvedLanguage))
         .navigationSubtitle(subtitleText)
-        // 折叠/展开侧边栏的按钮放在 Content Panel 的工具栏，符合用户的交互预期
+        // 侧栏切换、打开文件与文档操作统一放在 Content Panel 工具栏。
         .toolbar { detailToolbar }
     }
 
@@ -310,13 +310,16 @@ struct ContentView: View {
                 // 无动画直接切换：NavigationSplitView 列动画会驱动 detail 区 WKWebView 连续 resize 重排，长文档下明显卡顿
                 doc.columnVisibility = (doc.columnVisibility == .all) ? .detailOnly : .all
             } label: {
-                Label("Sidebar", systemImage: doc.columnVisibility == .all ? "sidebar.left" : "sidebar.right")
+                Label(L10n.string("Sidebar", language: doc.resolvedLanguage),
+                      systemImage: doc.columnVisibility == .all ? "sidebar.left" : "sidebar.right")
             }
-            .help(doc.columnVisibility == .all ? "Hide Sidebar" : "Show Sidebar")
+            .help(L10n.string(doc.columnVisibility == .all ? "Hide Sidebar" : "Show Sidebar", language: doc.resolvedLanguage))
         }
         ToolbarItem(placement: .navigation) {
-            Button { openPanel() } label: { Label("Open", systemImage: "folder") }
-                .help("Open Markdown File")
+            Button { openPanel() } label: {
+                Label(L10n.string("Open", language: doc.resolvedLanguage), systemImage: "folder")
+            }
+            .help(L10n.string("Open Markdown File", language: doc.resolvedLanguage))
         }
         ToolbarItem(placement: .primaryAction) {
             if isSearchVisible {
@@ -330,9 +333,9 @@ struct ContentView: View {
                 Button {
                     toggleSearch()
                 } label: {
-                    Label("Search", systemImage: "magnifyingglass")
+                    Label(L10n.string("Search", language: doc.resolvedLanguage), systemImage: "magnifyingglass")
                 }
-                .help("Search in Document")
+                .help(L10n.string("Search in Document", language: doc.resolvedLanguage))
             }
         }
         ToolbarItem(placement: .automatic) {
@@ -349,7 +352,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .help("Reload from Disk")
+            .help(L10n.string("Reload from Disk", language: doc.resolvedLanguage))
             .disabled(doc.url == nil)
         }
         ToolbarItem(placement: .automatic) {
@@ -368,7 +371,7 @@ struct ContentView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .help(doc.showSource ? "Show Rendered" : "Show Source")
+            .help(L10n.string(doc.showSource ? "Show Rendered" : "Show Source", language: doc.resolvedLanguage))
             .disabled(doc.url == nil)
         }
         // 外观切换：单按钮，图标表示点击后切换的方向——当前亮显月亮（点击切暗）、
@@ -390,16 +393,16 @@ struct ContentView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .help(isDarkEffective ? "Switch to Light" : "Switch to Dark")
+            .help(L10n.string(isDarkEffective ? "Switch to Light" : "Switch to Dark", language: doc.resolvedLanguage))
         }
         ToolbarItem(placement: .automatic) {
             Menu {
-                Button("Export as HTML…") { exportHTML() }
-                Button("Export as PDF…") { exportPDF() }
+                Button(L10n.string("Export as HTML…", language: doc.resolvedLanguage)) { exportHTML() }
+                Button(L10n.string("Export as PDF…", language: doc.resolvedLanguage)) { exportPDF() }
             } label: {
-                Label("Export", systemImage: "square.and.arrow.up")
+                Label(L10n.string("Export", language: doc.resolvedLanguage), systemImage: "square.and.arrow.up")
             }
-            .help("Export Document")
+            .help(L10n.string("Export Document", language: doc.resolvedLanguage))
             .disabled(doc.url == nil)
         }
     }
@@ -521,7 +524,7 @@ struct ContentView: View {
 
     private func presentExportError(_ error: Error) {
         let alert = NSAlert()
-        alert.messageText = "Export Failed"
+        alert.messageText = L10n.string("Export Failed", language: doc.resolvedLanguage)
         alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
         alert.runModal()
@@ -542,6 +545,7 @@ struct ContentView: View {
 
         let view = ExportSuccessPanel(
             fileName: url.lastPathComponent,
+            language: doc.resolvedLanguage,
             onShowInFinder: { NSApp.stopModal(withCode: .alertFirstButtonReturn) },
             onOK: { NSApp.stopModal(withCode: .alertSecondButtonReturn) }
         )
@@ -573,6 +577,7 @@ struct ContentView: View {
 
 /// 无文档时的空状态引导页：图标 + 说明 + 主操作按钮，克制不喧宾夺主。
 struct EmptyStateView: View {
+    @EnvironmentObject private var doc: DocState
     let onOpen: () -> Void
 
     var body: some View {
@@ -580,19 +585,19 @@ struct EmptyStateView: View {
             Image(systemName: "doc.richtext")
                 .font(.system(size: 52))
                 .foregroundStyle(.tertiary)
-            Text("MDReview")
+            Text(L10n.string("MDReview", language: doc.resolvedLanguage))
                 .font(.title2)
                 .fontWeight(.medium)
-            Text("Open a Markdown file or drop one here")
+            Text(L10n.string("Open a Markdown file or drop one here", language: doc.resolvedLanguage))
                 .foregroundStyle(.secondary)
             Button(action: onOpen) {
-                Label("Open…", systemImage: "folder")
+                Label(L10n.string("Open…", language: doc.resolvedLanguage), systemImage: "folder")
                     .font(.system(size: 14, weight: .medium))
                     .padding(.horizontal, 18)
                     .padding(.vertical, 8)
             }
             .buttonStyle(.borderedProminent)
-            Text("Toolbar  Open  ·  Drag & Drop  ·  Recent")
+            Text(L10n.string("Toolbar  Open  ·  Drag & Drop  ·  Recent", language: doc.resolvedLanguage))
                 .font(.callout)
                 .foregroundStyle(.tertiary)
         }
@@ -601,16 +606,16 @@ struct EmptyStateView: View {
     }
 }
 
-/// 记忆窗口位置/大小：AppKit 的 frame autosave（跨启动恢复）。
-private struct WindowFrameAutosave: NSViewRepresentable {
-    static let name = "MDReviewMainWindow"
-
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        DispatchQueue.main.async { v.window?.setFrameAutosaveName(Self.name) }
-        return v
+/// 记忆主窗口位置/大小：AppKit 的 frame autosave（跨启动恢复）。
+private final class WindowFrameAutosaveView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.setFrameAutosaveName(MainWindow.autosaveName)
     }
+}
 
+private struct WindowFrameAutosave: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { WindowFrameAutosaveView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
@@ -752,6 +757,7 @@ private struct OutlineLoadingView: View {
 /// 中性灰胶囊底（与 SidebarSwitcher 同一语言），轻阴影托起悬浮感。
 private struct FontSizeControls: View {
     @Binding var scale: Double
+    @EnvironmentObject private var doc: DocState
     @Environment(\.colorScheme) private var scheme
 
     private static let minScale = 0.8
@@ -760,11 +766,11 @@ private struct FontSizeControls: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            FontSizeButton("A−", hint: "Decrease Font Size", enabled: scale > Self.minScale) {
+            FontSizeButton("A−", hint: L10n.string("Decrease Font Size", language: doc.resolvedLanguage), enabled: scale > Self.minScale) {
                 scale = min(Self.maxScale, max(Self.minScale, scale - Self.step))
             }
             Divider().frame(width: 14)
-            FontSizeButton("A+", hint: "Increase Font Size", enabled: scale < Self.maxScale) {
+            FontSizeButton("A+", hint: L10n.string("Increase Font Size", language: doc.resolvedLanguage), enabled: scale < Self.maxScale) {
                 scale = min(Self.maxScale, max(Self.minScale, scale + Self.step))
             }
         }
@@ -831,6 +837,7 @@ private struct FontSizePressStyle: ButtonStyle {
 /// 导出成功弹窗：图标/文字/按钮全部横向居中（替代 NSAlert 的左图标右文字布局）。
 private struct ExportSuccessPanel: View {
     let fileName: String
+    let language: AppLanguage
     let onShowInFinder: () -> Void
     let onOK: () -> Void
 
@@ -840,7 +847,7 @@ private struct ExportSuccessPanel: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 46))
                 .foregroundStyle(.green)
-            Text("Export Complete")
+            Text(L10n.string("Export Complete", language: language))
                 .font(.title3)
                 .fontWeight(.semibold)
             Text(fileName)
@@ -850,9 +857,9 @@ private struct ExportSuccessPanel: View {
                 .truncationMode(.middle)
             Spacer(minLength: 8)
             HStack(spacing: 10) {
-                Button("Show in Finder", action: onShowInFinder)
+                Button(L10n.string("Show in Finder", language: language), action: onShowInFinder)
                     .keyboardShortcut(.defaultAction)
-                Button("OK", action: onOK)
+                Button(L10n.string("OK", language: language), action: onOK)
                     .keyboardShortcut(.cancelAction)
             }
             .padding(.bottom, 16)
@@ -1192,12 +1199,13 @@ final class SourceTextCoordinator: NSObject {
 /// 与侧栏大纲的灰底选中保持同一克制语言（Codex 式）。
 private struct SidebarSwitcher: View {
     @Binding var showOutline: Bool
+    @EnvironmentObject private var doc: DocState
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         HStack(spacing: 0) {
-            segment("Outline", isSelected: showOutline) { showOutline = true }
-            segment("Recent", isSelected: !showOutline) { showOutline = false }
+            segment(L10n.string("Outline", language: doc.resolvedLanguage), isSelected: showOutline) { showOutline = true }
+            segment(L10n.string("Recent", language: doc.resolvedLanguage), isSelected: !showOutline) { showOutline = false }
         }
         .padding(2)
         .background(

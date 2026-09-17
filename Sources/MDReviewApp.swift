@@ -1,34 +1,99 @@
 import AppKit
 import SwiftUI
+import Combine
+
+enum MainWindow {
+    static let autosaveName = "MDReviewMainWindow"
+}
 
 @main
 struct MDReviewApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var doc = DocState.shared
+    /// 菜单只订阅菜单自己的依赖（语言模式 / 实际语言 / 最近文件），
+    /// 不再直接依赖 DocState：否则 DocState 任何字段变化都会重建整份菜单。
+    @StateObject private var menu = AppMenuModel(doc: .shared)
 
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-                .environmentObject(doc)
-                // 外观联动走 AppKit 层 NSApp.appearance（比 preferredColorScheme 稳定，
-                // 避免 macOS 26 上 NavigationSplitView 布局动画时强制外观回退/闪烁）
-                .modifier(WindowAppearanceModifier(mode: doc.appearance))
+        Window("MDReview", id: "main") {
+            RootView()
         }
+        .defaultSize(width: 1180, height: 800)
         .windowResizability(.contentSize)
-        .commands { AppCommands() }
+        .commands {
+            AppCommands(
+                resolvedLanguage: menu.resolvedLanguage,
+                selectedLanguage: menu.selectedLanguage,
+                recent: menu.recent,
+                setLanguage: { menu.setLanguage($0) }
+            )
+        }
     }
 }
 
-/// 菜单命令：补齐 File / View 标准命令；不提供 New Window / Tab（第一版不支持 Tab）。
-@MainActor private struct AppCommands: Commands {
+/// 根视图：承载 DocState 的环境注入与外观/语言联动。
+/// App 层不再观察 DocState，菜单因此只在自身依赖变化时才重建。
+@MainActor
+private struct RootView: View {
     @ObservedObject private var doc = DocState.shared
+
+    var body: some View {
+        ContentView()
+            .environmentObject(doc)
+            .environment(\.locale, doc.locale)
+            // 外观联动走 AppKit 层 NSApp.appearance（比 preferredColorScheme 稳定，
+            // 避免 macOS 26 上 NavigationSplitView 布局动画时强制外观回退/闪烁）
+            .modifier(WindowAppearanceModifier(mode: doc.appearance))
+    }
+}
+
+/// 菜单依赖模型：只对外发布菜单真正读取的三样数据，且仅在值变化时发布。
+@MainActor
+final class AppMenuModel: ObservableObject {
+    @Published private(set) var selectedLanguage: AppLanguage
+    @Published private(set) var resolvedLanguage: AppLanguage
+    @Published private(set) var recent: [URL]
+
+    private let doc: DocState
+    private var cancellables: Set<AnyCancellable> = []
+
+    init(doc: DocState) {
+        self.doc = doc
+        selectedLanguage = doc.language
+        resolvedLanguage = doc.resolvedLanguage
+        recent = doc.recent
+
+        doc.$language.sink { [weak self] value in
+            guard let self, self.selectedLanguage != value else { return }
+            self.selectedLanguage = value
+        }.store(in: &cancellables)
+        doc.$resolvedLanguage.sink { [weak self] value in
+            guard let self, self.resolvedLanguage != value else { return }
+            self.resolvedLanguage = value
+        }.store(in: &cancellables)
+        doc.$recent.sink { [weak self] value in
+            guard let self, self.recent != value else { return }
+            self.recent = value
+        }.store(in: &cancellables)
+    }
+
+    func setLanguage(_ mode: AppLanguage) {
+        doc.setLanguage(mode)
+    }
+}
+
+/// 菜单命令：补齐 File / View 标准命令；固定单窗口，不提供 New Window / Tab。
+@MainActor private struct AppCommands: Commands {
+    let resolvedLanguage: AppLanguage
+    let selectedLanguage: AppLanguage
+    let recent: [URL]
+    let setLanguage: (AppLanguage) -> Void
 
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
-            Button("About MDReview") {
+            Button(L10n.string("About MDReview", language: resolvedLanguage)) {
                 AboutWindowController.shared.show()
             }
-            Button("Check for Updates…") {
+            Button(L10n.string("Check for Updates…", language: resolvedLanguage)) {
                 AboutWindowController.shared.show()
                 Task { @MainActor in
                     await UpdateManager.shared.checkForUpdates(manual: true)
@@ -37,77 +102,109 @@ struct MDReviewApp: App {
         }
         CommandGroup(replacing: .newItem) {
             Button { postMenuAction(.openPanel) } label: {
-                Label("Open…", systemImage: "folder")
+                Label(L10n.string("Open…", language: resolvedLanguage), systemImage: "folder")
             }
             .keyboardShortcut("o", modifiers: .command)
             Menu {
-                ForEach(doc.recent, id: \.self) { url in
+                ForEach(recent, id: \.self) { url in
                     Button(url.lastPathComponent) { postMenuAction(.openRecent(url)) }
                 }
-                if !doc.recent.isEmpty {
+                if !recent.isEmpty {
                     Divider()
-                    Button("Clear Menu") { postMenuAction(.clearRecent) }
+                    Button(L10n.string("Clear Menu", language: resolvedLanguage)) { postMenuAction(.clearRecent) }
                 }
             } label: {
-                Label("Open Recent", systemImage: "clock.arrow.circlepath")
+                Label(L10n.string("Open Recent", language: resolvedLanguage), systemImage: "clock.arrow.circlepath")
             }
             Button { postMenuAction(.openInExternalEditor) } label: {
-                Label("Open in External Editor…", systemImage: "pencil.and.outline")
+                Label(L10n.string("Open in External Editor…", language: resolvedLanguage), systemImage: "pencil.and.outline")
             }
             .keyboardShortcut("e", modifiers: .command)
             Divider()
             Menu {
                 Button { postMenuAction(.exportHTML) } label: {
-                    Label("Export as HTML…", systemImage: "doc.richtext")
+                    Label(L10n.string("Export as HTML…", language: resolvedLanguage), systemImage: "doc.richtext")
                 }
                 Button { postMenuAction(.exportPDF) } label: {
-                    Label("Export as PDF…", systemImage: "doc")
+                    Label(L10n.string("Export as PDF…", language: resolvedLanguage), systemImage: "doc")
                 }
             } label: {
-                Label("Export", systemImage: "square.and.arrow.up")
+                Label(L10n.string("Export", language: resolvedLanguage), systemImage: "square.and.arrow.up")
             }
         }
         CommandGroup(after: .toolbar) {
             Button { postMenuAction(.search) } label: {
-                Label("Find", systemImage: "magnifyingglass")
+                Label(L10n.string("Find", language: resolvedLanguage), systemImage: "magnifyingglass")
             }
             .keyboardShortcut("f", modifiers: .command)
             Button { postMenuAction(.toggleSidebar) } label: {
-                Label("Toggle Sidebar", systemImage: "sidebar.left")
+                Label(L10n.string("Toggle Sidebar", language: resolvedLanguage), systemImage: "sidebar.left")
             }
             .keyboardShortcut("s", modifiers: [.command, .control])
             Divider()
             Button { postMenuAction(.toggleSource) } label: {
-                Label("Toggle Source / Rendered", systemImage: "doc.richtext")
+                Label(L10n.string("Toggle Source / Rendered", language: resolvedLanguage), systemImage: "doc.richtext")
             }
             Divider()
             Menu {
                 Button { postMenuAction(.appearanceSystem) } label: {
-                    Label("Follow System", systemImage: "circle.lefthalf.filled")
+                    Label(L10n.string("Follow System", language: resolvedLanguage), systemImage: "circle.lefthalf.filled")
                 }
                 Button { postMenuAction(.appearanceLight) } label: {
-                    Label("Light", systemImage: "sun.max")
+                    Label(L10n.string("Light", language: resolvedLanguage), systemImage: "sun.max")
                 }
                 Button { postMenuAction(.appearanceDark) } label: {
-                    Label("Dark", systemImage: "moon")
+                    Label(L10n.string("Dark", language: resolvedLanguage), systemImage: "moon")
                 }
             } label: {
-                Label("Appearance", systemImage: "circle.lefthalf.filled")
+                Label(L10n.string("Appearance", language: resolvedLanguage), systemImage: "circle.lefthalf.filled")
+            }
+            Menu {
+                languageMenuItem(.system)
+                languageMenuItem(.chinese)
+                languageMenuItem(.english)
+            } label: {
+                Label(L10n.string("Language", language: resolvedLanguage), systemImage: "globe")
             }
         }
         CommandGroup(replacing: .pasteboard) {
-            Button("Copy") {
+            Button(L10n.string("Copy", language: resolvedLanguage)) {
                 NSApp.sendAction(Selector(("copy:")), to: nil, from: nil)
             }
             .keyboardShortcut("c", modifiers: .command)
-            Button("Paste") {
+            Button(L10n.string("Paste", language: resolvedLanguage)) {
                 NSApp.sendAction(Selector(("paste:")), to: nil, from: nil)
             }
             .keyboardShortcut("v", modifiers: .command)
-            Button("Select All") {
+            Button(L10n.string("Select All", language: resolvedLanguage)) {
                 NSApp.sendAction(Selector(("selectAll:")), to: nil, from: nil)
             }
             .keyboardShortcut("a", modifiers: .command)
+        }
+    }
+
+    private func languageTitle(_ language: AppLanguage) -> String {
+        switch language {
+        case .system:
+            return L10n.string("Follow System", language: resolvedLanguage)
+        case .chinese:
+            return "中文"
+        case .english:
+            return "English"
+        }
+    }
+
+    @ViewBuilder
+    private func languageMenuItem(_ language: AppLanguage) -> some View {
+        let title = languageTitle(language)
+        Button {
+            setLanguage(language)
+        } label: {
+            if selectedLanguage == language {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
         }
     }
 }
@@ -157,9 +254,50 @@ struct WindowAppearanceModifier: ViewModifier {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// 防止"改写标题 → didChangeItem 通知 → 再改写"的自我递归。
+    private var isLocalizingMainMenu = false
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 第一版不支持 Tab：显式关闭自动窗口标签，菜单不出现 New Tab / 标签栏等命令
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(languageDidChange(_:)),
+            name: .mdreviewLanguageChanged,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(systemLocaleDidChange(_:)),
+            name: NSLocale.currentLocaleDidChangeNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(menuStructureDidChange(_:)),
+            name: NSMenu.didAddItemNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive(_:)),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(menuDidBeginTracking(_:)),
+            name: NSMenu.didBeginTrackingNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(menuDidEndTracking(_:)),
+            name: NSMenu.didEndTrackingNotification,
+            object: nil
+        )
+        scheduleMainMenuUpdates()
 
         // 每次启动固定检查一次；失败静默，不阻塞文档打开。
         Task { @MainActor in
@@ -169,12 +307,84 @@ struct WindowAppearanceModifier: ViewModifier {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        if let u = urls.first {
-            // 系统（Finder 双击）打开的文件优先，启动时不再自动恢复上次文档
-            DocState.shared.didOpenViaSystem = true
-            DocState.shared.open(u)
+        guard let u = urls.first else { return }
+        // 系统（Finder 双击）打开的文件优先，启动时不再自动恢复上次文档
+        DocState.shared.didOpenViaSystem = true
+        DocState.shared.open(u)
+
+        // 单窗口应用：Finder 打开只替换当前文档，并复用现有主窗口尺寸。
+        application.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async {
+            if let window = application.windows.first(where: {
+                $0.frameAutosaveName == MainWindow.autosaveName
+            }) {
+                window.makeKeyAndOrderFront(nil)
+            }
         }
     }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
+
+    @objc private func languageDidChange(_ notification: Notification) {
+        updateMainMenu()
+        scheduleMainMenuUpdates()
+    }
+
+    @objc private func systemLocaleDidChange(_ notification: Notification) {
+        DocState.shared.refreshSystemLanguage()
+        scheduleMainMenuUpdates()
+    }
+
+    @objc private func menuStructureDidChange(_ notification: Notification) {
+        guard let changed = notification.object as? NSMenu else { return }
+        // 内容层菜单（工具栏菜单、右键菜单）随每次视图重绘被重建，它们与主菜单无关，
+        // 不该触发主菜单改写——否则任何界面操作都会白跑一遍主菜单。
+        guard belongsToMainMenu(changed) else { return }
+        updateMainMenu()
+        DispatchQueue.main.async { [weak self] in self?.updateMainMenu() }
+    }
+
+    /// 判断被改动的菜单是否属于主菜单层级（主菜单自身或其子菜单）。
+    private func belongsToMainMenu(_ menu: NSMenu) -> Bool {
+        var current: NSMenu? = menu
+        while let candidate = current {
+            if candidate === NSApp.mainMenu { return true }
+            current = candidate.supermenu
+        }
+        return false
+    }
+
+    @objc private func appDidBecomeActive(_ notification: Notification) {
+        DocState.shared.refreshSystemLanguage()
+        updateMainMenu()
+    }
+
+    @objc private func menuDidBeginTracking(_ notification: Notification) {
+        updateMainMenu()
+        DispatchQueue.main.async { [weak self] in self?.updateMainMenu() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+            self?.updateMainMenu()
+        }
+    }
+
+    @objc private func menuDidEndTracking(_ notification: Notification) {
+        scheduleMainMenuUpdates()
+    }
+
+    private func scheduleMainMenuUpdates() {
+        for delay in [0.0, 0.05, 0.2, 0.5, 1.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.updateMainMenu()
+            }
+        }
+    }
+
+    private func updateMainMenu() {
+        guard !isLocalizingMainMenu, let menu = NSApp.mainMenu else { return }
+        isLocalizingMainMenu = true
+        defer { isLocalizingMainMenu = false }
+        MainMenuLocalizer.update(menu, language: DocState.shared.resolvedLanguage)
+    }
+
+
 }
