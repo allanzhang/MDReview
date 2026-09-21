@@ -147,6 +147,86 @@ function runSwiftIntegrityTests() {
   if (run.status !== 0) process.exit(run.status || 1);
 }
 
+function runMarkdownFileDropTests() {
+  const moduleCache = fs.mkdtempSync(path.join(os.tmpdir(), 'mdreview-swift-cache-'));
+  const output = path.join(os.tmpdir(), `mdreview-file-drop-tests-${process.pid}`);
+  const compile = spawnSync('swiftc', [
+    '-swift-version', '5',
+    '-module-cache-path', moduleCache,
+    path.join(__dirname, '..', 'Sources', 'MarkdownFileDrop.swift'),
+    path.join(__dirname, 'MarkdownFileDropTests.swift'),
+    '-framework', 'AppKit',
+    '-o', output
+  ], { stdio: 'inherit' });
+
+  if (compile.error) throw compile.error;
+  if (compile.status !== 0) process.exit(compile.status || 1);
+
+  const run = spawnSync(output, [], { stdio: 'inherit' });
+  fs.rmSync(moduleCache, { recursive: true, force: true });
+  fs.rmSync(output, { force: true });
+
+  if (run.error) throw run.error;
+  if (run.status !== 0) process.exit(run.status || 1);
+}
+
+function runCodeFoldAndDropContractTests() {
+  const renderer = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'MarkdownRenderer.swift'), 'utf8');
+  const content = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'ContentView.swift'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'Resources', 'reader.css'), 'utf8');
+  const failures = [];
+
+  const polishStart = renderer.indexOf('window.__polishCodeBlocks');
+  const polishEnd = renderer.indexOf('window.__mdit.renderSection', polishStart);
+  if (polishStart < 0 || polishEnd < 0) {
+    failures.push('unable to locate __polishCodeBlocks');
+  } else {
+    const polish = renderer.slice(polishStart, polishEnd);
+    if (/\bvar pre\s*=/.test(polish)) {
+      failures.push('code-block fold must not capture pre with var');
+    }
+    if (!/\blet pre\s*=/.test(polish)) {
+      failures.push('code-block fold must bind pre with let per iteration');
+    }
+    if (!polish.includes("header.className = 'code-lang'")) {
+      failures.push('code-block fold must use a real .code-lang header');
+    }
+    if (!polish.includes('header.addEventListener')) {
+      failures.push('code-block fold must bind click on the header, not a shared pre');
+    }
+  }
+
+  if (!css.includes('pre.code-block .code-lang')) {
+    failures.push('reader.css must style the real language header');
+  }
+  if (/pre\.code-block::before[\s\S]{0,200}pointer-events:\s*none/.test(css)) {
+    failures.push('language bar must receive clicks');
+  }
+
+  if (content.includes('ReaderWebView(renderer: renderer)') && /ReaderWebView\(renderer: renderer\)\s*\n\s*\.onDrop/.test(content)) {
+    failures.push('onDrop must not sit only on ReaderWebView under EmptyStateView');
+  }
+  if (!content.includes('.onDrop(of: [.fileURL]')) {
+    failures.push('window must accept dropped file URLs');
+  }
+  if (!content.includes('MarkdownFileDrop.url(fromLoadedItem:')) {
+    failures.push('SwiftUI drop must parse loaded items through MarkdownFileDrop');
+  }
+  if (!renderer.includes('performDragOperation')) {
+    failures.push('WKWebView must implement performDragOperation for markdown files');
+  }
+  if (!renderer.includes('decidePolicyFor navigationAction')) {
+    failures.push('WKWebView must intercept dropped markdown navigations');
+  }
+
+  if (failures.length > 0) {
+    console.error('not ok - code fold and drop contract');
+    for (const failure of failures) console.error(`  - ${failure}`);
+    process.exit(1);
+  }
+  console.log('ok - code fold and drop contract');
+}
+
 function runSingleWindowSceneTests() {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'MDReviewApp.swift'), 'utf8');
   const contentSource = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'ContentView.swift'), 'utf8');
@@ -231,6 +311,8 @@ runMainMenuLocalizerTests();
 runSwiftIntegrityTests();
 runDocStateLanguageTests();
 runSwiftFileMonitorTests();
+runMarkdownFileDropTests();
+runCodeFoldAndDropContractTests();
 runSingleWindowSceneTests();
 
 const suites = [

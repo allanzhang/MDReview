@@ -80,6 +80,18 @@ struct ContentView: View {
             let t = sel.trimmingCharacters(in: .whitespacesAndNewlines)
             if !t.isEmpty { searchText = t }
         }
+        // 拖入 Markdown：挂在整窗，避免空状态/源码层盖住 WebView 后丢事件
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers)
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.accentColor, lineWidth: 2)
+                    .padding(6)
+                    .allowsHitTesting(false)
+            }
+        }
         // 记忆窗口位置/大小（AppKit frame autosave，跨启动恢复）
         .background(WindowFrameAutosave())
     }
@@ -240,17 +252,6 @@ struct ContentView: View {
         ZStack(alignment: .top) {
             // WebView 始终保留实例（NSViewRepresentable 首次 make 后复用），空状态覆盖其上
             ReaderWebView(renderer: renderer)
-                .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
-                    handleDrop(providers)
-                }
-                .overlay {
-                    // 拖拽视觉反馈：文件悬停时显示 accent 边框
-                    if isDropTargeted {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.accentColor, lineWidth: 2)
-                            .padding(6)
-                    }
-                }
             // 无文档空状态引导
             if doc.url == nil {
                 EmptyStateView(onOpen: { openPanel() })
@@ -467,23 +468,25 @@ struct ContentView: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        for p in providers {
-            if p.hasItemConformingToTypeIdentifier("public.file-url") {
-                p.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
-                    var fileURL: URL?
-                    if let data = item as? Data {
-                        fileURL = URL(dataRepresentation: data, relativeTo: nil)
-                    } else if let u = item as? URL {
-                        fileURL = u
-                    }
-                    if let u = fileURL {
-                        DispatchQueue.main.async { DocState.shared.open(u) }
-                    }
+        var accepted = false
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                accepted = true
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    guard let url = MarkdownFileDrop.url(fromLoadedItem: item) else { return }
+                    DispatchQueue.main.async { DocState.shared.open(url) }
                 }
-                return true
+                continue
+            }
+            if provider.canLoadObject(ofClass: URL.self) {
+                accepted = true
+                _ = provider.loadObject(ofClass: URL.self) { object, _ in
+                    guard let url = object as? URL, MarkdownFileDrop.isMarkdown(url) else { return }
+                    DispatchQueue.main.async { DocState.shared.open(url) }
+                }
             }
         }
-        return false
+        return accepted
     }
 
     /// 导出为静态 HTML 快照（渲染后的 DOM + 内联样式，Preview/浏览器均可打开）。

@@ -27,6 +27,8 @@ final class MarkdownWebView: WKWebView {
 
     override init(frame frameRect: NSRect, configuration: WKWebViewConfiguration) {
         super.init(frame: frameRect, configuration: configuration)
+        unregisterDraggedTypes()
+        registerForDraggedTypes([.fileURL])
         monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
             guard let self, let window = self.window, event.window === window else { return event }
             let loc = self.convert(event.locationInWindow, from: nil)
@@ -38,6 +40,36 @@ final class MarkdownWebView: WKWebView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        stripDragTypes(from: subview)
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        MarkdownFileDrop.firstURL(from: sender.draggingPasteboard) == nil ? [] : .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        draggingEntered(sender)
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        MarkdownFileDrop.firstURL(from: sender.draggingPasteboard) != nil
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let url = MarkdownFileDrop.firstURL(from: sender.draggingPasteboard) else { return false }
+        Task { @MainActor in
+            DocState.shared.open(url)
+        }
+        return true
+    }
+
+    private func stripDragTypes(from view: NSView) {
+        view.unregisterDraggedTypes()
+        view.subviews.forEach { stripDragTypes(from: $0) }
+    }
 
     private func makeItem(_ title: String, _ action: Selector) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -1032,13 +1064,14 @@ final class MarkdownWebView: WKWebView {
             window.__polishCodeBlocks = function(root){
               var pres = root.querySelectorAll('pre');
               for (var pi = 0; pi < pres.length; pi++){
-                var pre = pres[pi];
+                let pre = pres[pi];
                 if (pre.dataset.polished || pre.classList.contains('mermaid-box')) { continue; }
                 let code = pre.querySelector('code');
                 if (!code || (code.className || '').indexOf('language-mermaid') >= 0) { continue; }
                 pre.classList.add('code-block');
                 var langMatch = /(?:^|\s)language-([\w+-]+)/.exec(code.className || '');
-                pre.setAttribute('data-lang', langMatch ? langMatch[1] : 'code');
+                var langName = langMatch ? langMatch[1] : 'code';
+                pre.setAttribute('data-lang', langName);
                 if (pre.querySelector('.code-gutter')) { continue; }
                 var lines = (code.textContent || '').replace(/\n$/, '').split('\n');
                 pre.setAttribute('data-lines', String(lines.length));
@@ -1052,6 +1085,14 @@ final class MarkdownWebView: WKWebView {
                 code.parentNode.replaceChild(body, code);
                 body.appendChild(code);
                 pre.insertBefore(gutter, body);
+                let header = document.createElement('div');
+                header.className = 'code-lang';
+                header.setAttribute('data-lang', langName);
+                header.setAttribute('data-lines', String(lines.length));
+                header.addEventListener('click', function(){
+                  pre.classList.toggle('collapsed');
+                });
+                pre.insertBefore(header, pre.firstChild);
                 let copy = document.createElement('button');
                 copy.type = 'button';
                 copy.className = 'code-copy';
@@ -1081,15 +1122,6 @@ final class MarkdownWebView: WKWebView {
                   } else { fallback(); }
                 });
                 pre.appendChild(copy);
-                // 折叠/展开：点击语言栏（伪元素区域命中 pre 本体）切换 collapsed；
-                // 复制按钮、正文、行号栏的点击不触发折叠
-                pre.addEventListener('click', function(ev){
-                  var t = ev.target;
-                  if(!t){ return; }
-                  if(t.classList && t.classList.contains('code-copy')){ return; }
-                  if(t.closest && (t.closest('.code-body') || t.closest('.code-gutter'))){ return; }
-                  pre.classList.toggle('collapsed');
-                });
                 pre.dataset.polished = '1';
               }
             };
@@ -1285,6 +1317,16 @@ final class MarkdownWebView: WKWebView {
             guard let ref = message.body as? String else { return }
             renderer?.openLocalLink(ref)
         }
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? true
+        if isMainFrame, let url = navigationAction.request.url, MarkdownFileDrop.isMarkdown(url) {
+            DocState.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
