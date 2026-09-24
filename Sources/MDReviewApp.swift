@@ -231,7 +231,6 @@ private func postMenuAction(_ action: MenuAction) {
     NotificationCenter.default.post(name: .mdreviewMenuAction, object: action)
 }
 
-/// 应用级外观控制：设置 NSApp.appearance（AppKit 广播外观变化，工具栏等系统组件会刷新）。
 struct WindowAppearanceModifier: ViewModifier {
     let mode: AppearanceMode
 
@@ -256,10 +255,14 @@ struct WindowAppearanceModifier: ViewModifier {
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 防止"改写标题 → didChangeItem 通知 → 再改写"的自我递归。
     private var isLocalizingMainMenu = false
+    /// 合并窗口：菜单结构变化会一次涌入几十条通知（SwiftUI 重建 Commands 时逐条加 item），
+    /// 每条都全量改写主菜单会放大成上百次 O(菜单规模) 重写，实测把主线程堵死 7 秒。
+    private var pendingMenuUpdate = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 第一版不支持 Tab：显式关闭自动窗口标签，菜单不出现 New Tab / 标签栏等命令
         NSWindow.allowsAutomaticWindowTabbing = false
+        installTitlebarDrag()
 
         NotificationCenter.default.addObserver(
             self,
@@ -306,6 +309,47 @@ struct WindowAppearanceModifier: ViewModifier {
         }
     }
 
+    /// 标题栏拖窗：窗口带 .fullSizeContentView，SwiftUI 内容一直铺到标题栏底下，
+    /// 点在标题上时 NSThemeFrame 收不到事件，系统原生拖动失效。
+    /// 命中问 NSThemeFrame（content 的父视图）而不是 contentView：
+    /// 红绿灯、toolbar 是 themeFrame 的子视图且压在内容之上，themeFrame 命中它们；
+    /// 标题文字没有 AppKit 视图挡着，会一路命中到 content 子树——只有这才代发拖动。
+    /// 区域判定用 contentLayoutRect，不动任何布局。
+    /// 方法在 @MainActor 的 AppDelegate 上，监视器闭包由此继承隔离，才能直接调 performDrag(with:)。
+    private func installTitlebarDrag() {
+        _ = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+            guard let window = event.window,
+                  let content = window.contentView,
+                  let theme = content.superview else { return event }
+            let loc = event.locationInWindow
+            // 内容区永远不插手（链接、选区、滚动都归原生）
+            guard loc.y >= window.contentLayoutRect.maxY else { return event }
+            guard let hit = theme.hitTest(loc) else { return event }
+
+            var interactive = false
+            var view: NSView? = hit
+            while let current = view {
+                let name = String(describing: type(of: current))
+                // 红绿灯是 NSButton 子类；toolbar item 挂在 NSToolbarItemViewer 下
+                // （链上既无 button/control 字样、也不是 NSControl，只能按容器认）。
+                // 标题文字是 NSTextField（不是 NSButton），不算交互，仍要能拖。
+                if current is NSButton
+                    || name.localizedCaseInsensitiveContains("button")
+                    || name.localizedCaseInsensitiveContains("control")
+                    || name.contains("ToolbarItemViewer") {
+                    interactive = true
+                    break
+                }
+                view = current.superview
+            }
+            if !interactive {
+                window.performDrag(with: event)
+                return nil
+            }
+            return event
+        }
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let u = urls.first else { return }
         // 系统（Finder 双击）打开的文件优先，启动时不再自动恢复上次文档
@@ -339,9 +383,20 @@ struct WindowAppearanceModifier: ViewModifier {
         guard let changed = notification.object as? NSMenu else { return }
         // 内容层菜单（工具栏菜单、右键菜单）随每次视图重绘被重建，它们与主菜单无关，
         // 不该触发主菜单改写——否则任何界面操作都会白跑一遍主菜单。
-        guard belongsToMainMenu(changed) else { return }
-        updateMainMenu()
-        DispatchQueue.main.async { [weak self] in self?.updateMainMenu() }
+        let belongs = belongsToMainMenu(changed)
+        guard belongs else { return }
+        scheduleMenuUpdate()
+    }
+
+    /// 一批通知只改写一次：异步合并，下一轮 run loop 兜底执行。
+    private func scheduleMenuUpdate() {
+        guard !pendingMenuUpdate else { return }
+        pendingMenuUpdate = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingMenuUpdate = false
+            self.updateMainMenu()
+        }
     }
 
     /// 判断被改动的菜单是否属于主菜单层级（主菜单自身或其子菜单）。
@@ -359,17 +414,9 @@ struct WindowAppearanceModifier: ViewModifier {
         updateMainMenu()
     }
 
-    @objc private func menuDidBeginTracking(_ notification: Notification) {
-        updateMainMenu()
-        DispatchQueue.main.async { [weak self] in self?.updateMainMenu() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
-            self?.updateMainMenu()
-        }
-    }
+    @objc private func menuDidBeginTracking(_ notification: Notification) {}
 
-    @objc private func menuDidEndTracking(_ notification: Notification) {
-        scheduleMainMenuUpdates()
-    }
+    @objc private func menuDidEndTracking(_ notification: Notification) {}
 
     private func scheduleMainMenuUpdates() {
         for delay in [0.0, 0.05, 0.2, 0.5, 1.0] {

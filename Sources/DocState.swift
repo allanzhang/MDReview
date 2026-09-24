@@ -140,6 +140,10 @@ enum AppearanceMode: String {
               url.pathExtension.lowercased() == "markdown" else { return }
         clearPendingFileUpdate()
         startMonitoring(url)
+        // recent 与 lastUrl 在发起打开时就记，不放进读盘回调：重新打开当前文档时回调会被
+        // pendingOpenURL 守卫丢弃，清空历史后只剩一篇时再点它，列表和启动恢复都回不来。
+        touchRecent(url)
+        UserDefaults.standard.set(url.path, forKey: lastUrlKey)
         pendingOpenURL = url
         // 后台读盘避免大文件阻塞主线程；完成回调经 pendingOpenURL 比对丢弃过期结果
         Task.detached(priority: .userInitiated) { [weak self] in
@@ -153,11 +157,6 @@ enum AppearanceMode: String {
                 if let text {
                     self.rawText = text
                     self.url = url
-                    UserDefaults.standard.set(url.path, forKey: self.lastUrlKey)
-                    if let idx = self.recent.firstIndex(of: url) { self.recent.remove(at: idx) }
-                    self.recent.insert(url, at: 0)
-                    if self.recent.count > self.recentMax { self.recent.removeLast() }
-                    self.saveRecent()
                 } else {
                     let message = errorMsg ?? L10n.string("Unknown error", language: self.resolvedLanguage)
                     self.rawText = "// " + L10n.format("Cannot read file: %@", language: self.resolvedLanguage, message)
@@ -165,6 +164,14 @@ enum AppearanceMode: String {
                 }
             }
         }
+    }
+
+    /// 把文档记入最近列表并置顶，超过上限丢弃最旧一条。
+    private func touchRecent(_ url: URL) {
+        if let idx = recent.firstIndex(of: url) { recent.remove(at: idx) }
+        recent.insert(url, at: 0)
+        if recent.count > recentMax { recent.removeLast() }
+        saveRecent()
     }
 
     /// 建立对当前文件的磁盘监听（.write/.delete/.rename），外部保存后防抖标记更新。
@@ -231,16 +238,22 @@ enum AppearanceMode: String {
         UserDefaults.standard.set(arr, forKey: recentKey)
     }
 
-    /// 从最近列表移除（右键菜单）。
+    /// 从最近列表移除（右键菜单）。移走的是启动恢复目标时一并清除，
+    /// 否则列表删空后重启仍会打开它。
     func removeRecent(_ url: URL) {
         recent.removeAll { $0 == url }
         saveRecent()
+        if UserDefaults.standard.string(forKey: lastUrlKey) == url.path {
+            UserDefaults.standard.removeObject(forKey: lastUrlKey)
+        }
     }
 
-    /// 清空最近列表（Open Recent 菜单）。
+    /// 清空最近列表（Open Recent 菜单）。同时清除启动恢复用的 lastUrl，
+    /// 否则重启时 restoreLastDocument 会把刚清掉的最后一篇重新打开。
     func clearRecent() {
         recent.removeAll()
         saveRecent()
+        UserDefaults.standard.removeObject(forKey: lastUrlKey)
     }
 
     /// 用外部编辑器打开指定文件：优先 Cursor / VSCode，未检测到则退回系统默认关联应用。

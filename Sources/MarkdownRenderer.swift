@@ -32,7 +32,10 @@ final class MarkdownWebView: WKWebView {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
             guard let self, let window = self.window, event.window === window else { return event }
             let loc = self.convert(event.locationInWindow, from: nil)
-            guard self.bounds.contains(loc) else { return event }
+            let inside = self.bounds.contains(loc)
+            // 只拦截落在网页视图内的右键。popUpContextMenu 会阻塞到菜单关闭，
+            // 不过滤的话侧栏等其他区域的右键也被这里占住主线程，菜单无法响应鼠标移动。
+            guard inside else { return event }
             // 弹出我们自己的菜单并消费事件，阻止 WKWebView 内部默认菜单
             NSMenu.popUpContextMenu(self.makeMenu(), with: event, for: self)
             return nil
@@ -762,9 +765,9 @@ final class MarkdownWebView: WKWebView {
         var p = Math.min(1, Math.max(0, window.scrollY / max));
         if (Math.abs(p - (window.__lastProgress || 0)) > 0.002) {
           window.__lastProgress = p;
-        }
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.progress) {
-          window.webkit.messageHandlers.progress.postMessage({progress: p, offset: window.scrollY});
+          if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.progress) {
+            window.webkit.messageHandlers.progress.postMessage({progress: p, offset: window.scrollY});
+          }
         }
       });
     }, {passive:true});

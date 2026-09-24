@@ -6,168 +6,75 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-function runSwiftVersionTests() {
+function compileAndRun(name, files, { parseAsLibrary = false, frameworks = [] } = {}) {
   const moduleCache = fs.mkdtempSync(path.join(os.tmpdir(), 'mdreview-swift-cache-'));
-  const output = path.join(os.tmpdir(), `mdreview-update-version-tests-${process.pid}`);
-  const compile = spawnSync('swiftc', [
-    '-swift-version', '5',
-    '-module-cache-path', moduleCache,
-    path.join(__dirname, '..', 'Sources', 'UpdateVersion.swift'),
-    path.join(__dirname, 'UpdateVersionTests.swift'),
-    '-o', output
-  ], { stdio: 'inherit' });
-
+  const output = path.join(os.tmpdir(), `mdreview-${name}-${process.pid}`);
+  const args = ['-swift-version', '5', '-module-cache-path', moduleCache];
+  if (parseAsLibrary) args.push('-parse-as-library');
+  for (const fw of frameworks) args.push('-framework', fw);
+  args.push(...files, '-o', output);
+  const compile = spawnSync('swiftc', args, { stdio: 'inherit' });
   if (compile.error) throw compile.error;
   if (compile.status !== 0) process.exit(compile.status || 1);
-
   const run = spawnSync(output, [], { stdio: 'inherit' });
   fs.rmSync(moduleCache, { recursive: true, force: true });
   fs.rmSync(output, { force: true });
-
   if (run.error) throw run.error;
   if (run.status !== 0) process.exit(run.status || 1);
+}
+
+function runSwiftVersionTests() {
+  compileAndRun('update-version-tests', [
+    path.join(__dirname, '..', 'Sources', 'UpdateVersion.swift'),
+    path.join(__dirname, 'UpdateVersionTests.swift')
+  ]);
 }
 
 function runAppLanguageTests() {
-  const moduleCache = fs.mkdtempSync(path.join(os.tmpdir(), 'mdreview-swift-cache-'));
-  const output = path.join(os.tmpdir(), `mdreview-app-language-tests-${process.pid}`);
-  const compile = spawnSync('swiftc', [
-    '-swift-version', '5',
-    '-module-cache-path', moduleCache,
+  compileAndRun('app-language-tests', [
     path.join(__dirname, '..', 'Sources', 'AppLanguage.swift'),
-    path.join(__dirname, 'AppLanguageTests.swift'),
-    '-o', output
-  ], { stdio: 'inherit' });
-
-  if (compile.error) throw compile.error;
-  if (compile.status !== 0) process.exit(compile.status || 1);
-
-  const run = spawnSync(output, [], { stdio: 'inherit' });
-  fs.rmSync(moduleCache, { recursive: true, force: true });
-  fs.rmSync(output, { force: true });
-
-  if (run.error) throw run.error;
-  if (run.status !== 0) process.exit(run.status || 1);
+    path.join(__dirname, 'AppLanguageTests.swift')
+  ]);
 }
 
-function runDocStateLanguageTests() {
-  const moduleCache = fs.mkdtempSync(path.join(os.tmpdir(), 'mdreview-swift-cache-'));
-  const output = path.join(os.tmpdir(), `mdreview-doc-state-language-tests-${process.pid}`);
-  const compile = spawnSync('swiftc', [
-    '-swift-version', '5',
-    '-parse-as-library',
-    '-module-cache-path', moduleCache,
+function runDocStateTests() {
+  compileAndRun('docstate-tests', [
     path.join(__dirname, '..', 'Sources', 'AppLanguage.swift'),
     path.join(__dirname, '..', 'Sources', 'Localization.swift'),
     path.join(__dirname, '..', 'Sources', 'DocState.swift'),
-    path.join(__dirname, 'DocStateLanguageTests.swift'),
-    '-framework', 'AppKit',
-    '-framework', 'SwiftUI',
-    '-o', output
-  ], { stdio: 'inherit' });
-
-  if (compile.error) throw compile.error;
-  if (compile.status !== 0) process.exit(compile.status || 1);
-
-  const run = spawnSync(output, [], { stdio: 'inherit' });
-  fs.rmSync(moduleCache, { recursive: true, force: true });
-  fs.rmSync(output, { force: true });
-
-  if (run.error) throw run.error;
-  if (run.status !== 0) process.exit(run.status || 1);
+    path.join(__dirname, 'TestRunner.swift'),
+    path.join(__dirname, 'DocStateTests.swift')
+  ], { parseAsLibrary: true, frameworks: ['AppKit', 'SwiftUI'] });
 }
 
 function runAboutLinksTests() {
-  const moduleCache = fs.mkdtempSync(path.join(os.tmpdir(), 'mdreview-swift-cache-'));
-  const output = path.join(os.tmpdir(), `mdreview-about-links-tests-${process.pid}`);
-  const compile = spawnSync('swiftc', [
-    '-swift-version', '5',
-    '-module-cache-path', moduleCache,
+  compileAndRun('about-links-tests', [
     path.join(__dirname, '..', 'Sources', 'AboutLinks.swift'),
-    path.join(__dirname, 'AboutLinksTests.swift'),
-    '-o', output
-  ], { stdio: 'inherit' });
-
-  if (compile.error) throw compile.error;
-  if (compile.status !== 0) process.exit(compile.status || 1);
-
-  const run = spawnSync(output, [], { stdio: 'inherit' });
-  fs.rmSync(moduleCache, { recursive: true, force: true });
-  fs.rmSync(output, { force: true });
-
-  if (run.error) throw run.error;
-  if (run.status !== 0) process.exit(run.status || 1);
+    path.join(__dirname, 'AboutLinksTests.swift')
+  ]);
 }
 
 function runMainMenuLocalizerTests() {
-  const moduleCache = fs.mkdtempSync(path.join(os.tmpdir(), 'mdreview-swift-cache-'));
-  const output = path.join(os.tmpdir(), `mdreview-main-menu-localizer-tests-${process.pid}`);
-  const compile = spawnSync('swiftc', [
-    '-swift-version', '5',
-    '-module-cache-path', moduleCache,
+  compileAndRun('main-menu-localizer-tests', [
     path.join(__dirname, '..', 'Sources', 'AppLanguage.swift'),
     path.join(__dirname, '..', 'Sources', 'Localization.swift'),
     path.join(__dirname, '..', 'Sources', 'MainMenuLocalizer.swift'),
-    path.join(__dirname, 'MainMenuLocalizerTests.swift'),
-    '-framework', 'AppKit',
-    '-o', output
-  ], { stdio: 'inherit' });
-
-  if (compile.error) throw compile.error;
-  if (compile.status !== 0) process.exit(compile.status || 1);
-
-  const run = spawnSync(output, [], { stdio: 'inherit' });
-  fs.rmSync(moduleCache, { recursive: true, force: true });
-  fs.rmSync(output, { force: true });
-
-  if (run.error) throw run.error;
-  if (run.status !== 0) process.exit(run.status || 1);
+    path.join(__dirname, 'MainMenuLocalizerTests.swift')
+  ], { frameworks: ['AppKit'] });
 }
 
 function runSwiftIntegrityTests() {
-  const moduleCache = fs.mkdtempSync(path.join(os.tmpdir(), 'mdreview-swift-cache-'));
-  const output = path.join(os.tmpdir(), `mdreview-update-integrity-tests-${process.pid}`);
-  const compile = spawnSync('swiftc', [
-    '-swift-version', '5',
-    '-parse-as-library',
-    '-module-cache-path', moduleCache,
+  compileAndRun('update-integrity-tests', [
     path.join(__dirname, '..', 'Sources', 'UpdateIntegrity.swift'),
-    path.join(__dirname, 'UpdateIntegrityTests.swift'),
-    '-o', output
-  ], { stdio: 'inherit' });
-
-  if (compile.error) throw compile.error;
-  if (compile.status !== 0) process.exit(compile.status || 1);
-
-  const run = spawnSync(output, [], { stdio: 'inherit' });
-  fs.rmSync(moduleCache, { recursive: true, force: true });
-  fs.rmSync(output, { force: true });
-
-  if (run.error) throw run.error;
-  if (run.status !== 0) process.exit(run.status || 1);
+    path.join(__dirname, 'UpdateIntegrityTests.swift')
+  ], { parseAsLibrary: true });
 }
 
 function runMarkdownFileDropTests() {
-  const moduleCache = fs.mkdtempSync(path.join(os.tmpdir(), 'mdreview-swift-cache-'));
-  const output = path.join(os.tmpdir(), `mdreview-file-drop-tests-${process.pid}`);
-  const compile = spawnSync('swiftc', [
-    '-swift-version', '5',
-    '-module-cache-path', moduleCache,
+  compileAndRun('file-drop-tests', [
     path.join(__dirname, '..', 'Sources', 'MarkdownFileDrop.swift'),
-    path.join(__dirname, 'MarkdownFileDropTests.swift'),
-    '-framework', 'AppKit',
-    '-o', output
-  ], { stdio: 'inherit' });
-
-  if (compile.error) throw compile.error;
-  if (compile.status !== 0) process.exit(compile.status || 1);
-
-  const run = spawnSync(output, [], { stdio: 'inherit' });
-  fs.rmSync(moduleCache, { recursive: true, force: true });
-  fs.rmSync(output, { force: true });
-
-  if (run.error) throw run.error;
-  if (run.status !== 0) process.exit(run.status || 1);
+    path.join(__dirname, 'MarkdownFileDropTests.swift')
+  ], { frameworks: ['AppKit'] });
 }
 
 function runCodeFoldAndDropContractTests() {
@@ -277,31 +184,34 @@ function runSingleWindowSceneTests() {
   console.log('ok - single main window scene contract');
 }
 
-function runSwiftFileMonitorTests() {
-  const moduleCache = fs.mkdtempSync(path.join(os.tmpdir(), 'mdreview-swift-cache-'));
-  const output = path.join(os.tmpdir(), `mdreview-file-monitor-tests-${process.pid}`);
-  const compile = spawnSync('swiftc', [
-    '-swift-version', '5',
-    '-parse-as-library',
-    '-module-cache-path', moduleCache,
-    path.join(__dirname, '..', 'Sources', 'AppLanguage.swift'),
-    path.join(__dirname, '..', 'Sources', 'Localization.swift'),
-    path.join(__dirname, '..', 'Sources', 'DocState.swift'),
-    path.join(__dirname, 'DocStateFileMonitorTests.swift'),
-    '-framework', 'AppKit',
-    '-framework', 'SwiftUI',
-    '-o', output
-  ], { stdio: 'inherit' });
+function runViewStructureContractTests() {
+  const recent = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'RecentView.swift'), 'utf8');
+  const outline = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'OutlineView.swift'), 'utf8');
+  const content = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'ContentView.swift'), 'utf8');
+  const docState = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'DocState.swift'), 'utf8');
+  const failures = [];
 
-  if (compile.error) throw compile.error;
-  if (compile.status !== 0) process.exit(compile.status || 1);
+  // 最近列表行不能是 Button：Button 的 action 在右键时也会触发，弹出菜单的同时读盘重渲染，主线程被堵数秒。
+  // 打开动作必须由 onTapGesture 承担，右键只留给 contextMenu。
+  if (recent.includes('Button(action: action)')) {
+    failures.push('RecentView: 行不能用 Button，右键会同时触发打开并卡死主线程，改用 onTapGesture');
+  }
+  if (!recent.includes('.onTapGesture(perform: action)')) {
+    failures.push('RecentView: 缺少 onTapGesture 承担左键打开');
+  }
 
-  const run = spawnSync(output, [], { stdio: 'inherit' });
-  fs.rmSync(moduleCache, { recursive: true, force: true });
-  fs.rmSync(output, { force: true });
+  // clearRecent 必须同时清除 lastUrl，否则重启会恢复刚清空的最后一篇文档。
+  const clearStart = docState.indexOf('func clearRecent()');
+  const clearBody = docState.slice(clearStart, docState.indexOf('\n    func ', clearStart + 1));
+  if (!clearBody.includes('lastUrlKey')) {
+    failures.push('DocState.clearRecent() 必须清除 lastUrlKey，否则重启时 restoreLastDocument 会重新打开已清空的文档');
+  }
 
-  if (run.error) throw run.error;
-  if (run.status !== 0) process.exit(run.status || 1);
+  if (failures.length > 0) {
+    for (const f of failures) console.error(`FAIL - ${f}`);
+    process.exit(1);
+  }
+  console.log('ok - view structure contracts');
 }
 
 runSwiftVersionTests();
@@ -309,10 +219,10 @@ runAppLanguageTests();
 runAboutLinksTests();
 runMainMenuLocalizerTests();
 runSwiftIntegrityTests();
-runDocStateLanguageTests();
-runSwiftFileMonitorTests();
+runDocStateTests();
 runMarkdownFileDropTests();
 runCodeFoldAndDropContractTests();
+runViewStructureContractTests();
 runSingleWindowSceneTests();
 
 const suites = [

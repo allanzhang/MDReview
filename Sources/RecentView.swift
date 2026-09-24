@@ -50,21 +50,30 @@ private struct RecentRow: View {
     }
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(url.lastPathComponent)
-                    .lineLimit(1)
-                Text(url.deletingLastPathComponent().path)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .contentShape(Rectangle())
+        VStack(alignment: .leading, spacing: 2) {
+            Text(url.lastPathComponent)
+                .lineLimit(1)
+            Text(url.deletingLastPathComponent().path)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .contentShape(Rectangle())
+        // 不用 Button：Button 在右键时也会触发 action，弹出菜单的同时去读盘重渲染，主线程被堵住数秒。
+        // 打开动作只挂在左键单击上，右键留给 contextMenu。
+        .onTapGesture(perform: action)
+        .background {
+            if isHovering {
+                // 层次感：light 下 hover 更实（浅灰叠白底不可见），dark 保持现状
+                rowShape.fill(scheme == .dark
+                              ? Color.white.opacity(0.06)
+                              : Color.black.opacity(0.08))
+            }
+        }
+        .onHover { isHovering = $0 }
         .contextMenu {
             Button(L10n.string("Reveal in Finder", language: doc.resolvedLanguage)) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             Button(L10n.string("Copy Path", language: doc.resolvedLanguage)) {
@@ -75,14 +84,5 @@ private struct RecentRow: View {
             Divider()
             Button(L10n.string("Remove from Recent", language: doc.resolvedLanguage)) { DocState.shared.removeRecent(url) }
         }
-        .background {
-            if isHovering {
-                // 层次感：light 下 hover 更实（浅灰叠白底不可见），dark 保持现状
-                rowShape.fill(scheme == .dark
-                              ? Color.white.opacity(0.06)
-                              : Color.black.opacity(0.08))
-            }
-        }
-        .onHover { isHovering = $0 }
     }
 }

@@ -228,9 +228,11 @@ private struct OutlineRow: View {
         // 整行（含缩进条与左右留白）都响应点击，三角 Button 在自己 16pt 区域内优先拦截，
         // 避免"点行边缘没反应、要点好几次"的不灵敏感
         .contentShape(Rectangle())
-        .onTapGesture(perform: action)
         .animation(.easeOut(duration: 0.12), value: isHovering)
         .animation(.easeOut(duration: 0.12), value: isActive)
+        // onTapGesture / onHover 挂在整行 content 上而非外层容器：外层丢 hover 退出事件时
+        // 高亮会停在 hover 态，鼠标移过该行时表现为卡住。
+        .onTapGesture(perform: action)
         .onHover { isHovering = $0 }
         // hover 弹出完整标题 tooltip（原生 macOS 帮助提示）
         .help(node.heading.text.isEmpty ? L10n.string("(Untitled)", language: doc.resolvedLanguage) : node.heading.text)

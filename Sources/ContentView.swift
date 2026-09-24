@@ -819,9 +819,11 @@ private struct FontSizeButton: View {
                     }
                 }
                 .animation(.easeOut(duration: 0.12), value: isHovering)
+                // onHover 挂在 label 内：挂在 Button 外层时，鼠标移出按钮区域会丢 hover 退出事件，
+                // 高亮停在 hover 态，表现为鼠标在标题栏区域移动时"卡住不动"。
+                .onHover { isHovering = enabled && $0 }
         }
         .buttonStyle(FontSizePressStyle())
-        .onHover { isHovering = enabled && $0 }
         .disabled(!enabled)
         .help(hint)
     }

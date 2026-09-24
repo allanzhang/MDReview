@@ -18,6 +18,8 @@ xcuserdata/
 
 # ===== AI 过程/交接文档（agent 内部用，非项目资产，不入库）=====
 HANDOFF.md
+.codex/
+Docs/superpowers/
 
 # ===== 系统文件 =====
 .DS_Store

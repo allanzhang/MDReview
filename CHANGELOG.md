@@ -1,5 +1,19 @@
 # Changelog
 
+## V1.6.2 — 2026-09-24
+
+### 修复
+- 修复整个标题栏拖不动窗口：`.fullSizeContentView` 下 SwiftUI 内容铺到标题栏底下，点击命中 `NSHostingView` 而非 `NSThemeFrame`，系统原生拖动收不到事件。改为按 `NSThemeFrame` 命中判定并在标题栏区代发 `performDrag(with:)`，红绿灯与工具栏按钮照常点击，内容区不介入，界面布局不变
+- 修复右键 Recent 列表瞬间全局卡死约 7 秒：菜单结构变化的一批通知原本每条都触发两次主菜单全量改写（实测 110 次、累计 7.7 秒），改为按批合并只改写一次；并缓存 lproj Bundle，单次全量改写从 30~80ms 降到 ms 级
+- 修复 Recent 行右键会同时打开文档：打开动作从 `Button` 改为 `onTapGesture`，右键只留给 ContextMenu
+- 修复清空或移除最近列表后，重启仍会打开已移除的文档：`removeRecent` / `clearRecent` 一并清除启动恢复用的 `lastUrl`
+- 修复重新打开当前文档时最近列表不更新：`recent` 与 `lastUrl` 改为在发起打开时记录，不再放进读盘回调（原先被 `pendingOpenURL` 守卫丢弃）
+- 修复工具栏字号按钮、大纲行、Recent 行的 hover 高亮卡住：`onHover` 挂到实际内容上，避免外层丢失 hover 退出事件
+- 滚动进度改为仅在位置变化时回调，去掉无变化时的重复消息
+
+### 测试
+- DocState 相关测试合并为 `Tests/DocStateTests.swift`，`Tests/run.js` 相应收敛
+
 ## V1.6.1 — 2026-09-21
 
 感谢 VIP 用户车友船长先生提出的宝贵意见。Make love not war, Salute!
