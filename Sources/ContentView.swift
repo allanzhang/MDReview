@@ -203,7 +203,14 @@ struct ContentView: View {
     }
 
     private func copySelection() {
-        NSApp.sendAction(Selector(("copy:")), to: nil, from: nil)
+        // 右键菜单是挂在 ZStack 上的 SwiftUI .contextMenu，动作执行时响应链起点已不是
+        // NSTextView，sendAction(to: nil) 找不到 copy: 的接收者 —— 表现为「复制没反应」。
+        // 源码态改为直发通知、显式指定目标文本视图，不经响应链；渲染态维持原路径。
+        if doc.showSource {
+            NotificationCenter.default.post(name: .mdreviewSourceCopy, object: nil)
+        } else {
+            NSApp.sendAction(Selector(("copy:")), to: nil, from: nil)
+        }
     }
 
     private func revealInFinder() {
@@ -911,22 +918,199 @@ struct SourceTextView: NSViewRepresentable {
 }
 
 /// 主题切换时同步刷新源码文本外观的 NSTextView 子类。
+/// 顺带承担当前行高亮：文本视图自己的背景色由 super.draw 填，
+/// 高亮只能画在文字之后，用极淡的一层墨色叠在整行宽度上，视觉与垫底等价。
 private final class ThemedTextView: NSTextView {
     var appearanceChanged: (() -> Void)?
+
+    /// 选区覆盖行的整行高亮矩形（文本视图坐标，nil 表示不高亮）。
+    var highlightRect: NSRect? {
+        didSet {
+            // 只重画新旧高亮的并集，不整屏重画。
+            let previous = oldValue ?? .zero
+            let current = highlightRect ?? .zero
+            var dirty = current.isEmpty ? previous : current
+            if !previous.isEmpty { dirty = dirty.isEmpty ? previous : dirty.union(previous) }
+            if !dirty.isEmpty { needsDisplay = true }
+        }
+    }
+    var highlightColor: NSColor = .clear {
+        didSet { if !highlightRectIsEmpty { needsDisplay = true } }
+    }
+
+    private var highlightRectIsEmpty: Bool { (highlightRect ?? .zero).isEmpty }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         appearanceChanged?()
     }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let rect = highlightRect, !rect.isEmpty else { return }
+        let hit = dirtyRect.intersection(rect)
+        guard !hit.isEmpty else { return }
+        highlightColor.setFill()
+        hit.fill()
+    }
+}
+
+/// 源码行号排版：把布局管理器的行片段翻译成「逻辑行号 + 文本视图坐标矩形」。
+/// 行号栏与当前行高亮共用这一份换算，保证两者纵向永远对齐。
+@MainActor
+enum SourceLineLayout {
+    /// 一个行片段：逻辑行号（0 基）、是否为该行的首个片段（软换行的续行为 false）、
+    /// 以及片段在文本视图坐标系里的矩形。
+    struct Fragment {
+        let line: Int
+        let isFirstOfLine: Bool
+        let rect: NSRect
+    }
+
+    /// 容器坐标 → 文本视图坐标：NSTextView 把文本容器按 textContainerInset 摆放，
+    /// 实测布局管理器返回的片段矩形加上 inset 即为文本视图坐标。
+    private static func toViewRect(_ rect: NSRect, inset: NSSize) -> NSRect {
+        rect.offsetBy(dx: inset.width, dy: inset.height)
+    }
+
+    /// 遍历 clip（文本视图坐标）纵向范围内的行片段。
+    /// 只走可视片段，成本与文档大小无关。
+    static func visibleFragments(in tv: NSTextView,
+                                 lineIndex: SourceLineIndex,
+                                 clip: NSRect) -> [Fragment] {
+        guard let layout = tv.layoutManager, let container = tv.textContainer else { return [] }
+        let inset = tv.textContainerInset
+        // 查询矩形必须横向覆盖正文：行号栏自身的 x 范围换算到容器坐标后落在正文左侧，
+        // 直接用它查询会得到空区间，行号一个都不画。纵向按调用方给的 clip 收窄。
+        let query = NSRect(x: 0,
+                           y: clip.minY - inset.height,
+                           width: container.size.width,
+                           height: clip.height)
+        return fragments(layout: layout,
+                         container: container,
+                         inset: inset,
+                         lineIndex: lineIndex,
+                         glyphRange: layout.glyphRange(forBoundingRect: query, in: container),
+                         textLength: currentTextLength(of: tv))
+    }
+
+    /// 选区覆盖的行在文本视图坐标里的整行高亮矩形（含软换行占的所有片段高度）。
+    /// 连续行之间没有空隙，所以一个包围盒就够，不必逐行拼。
+    static func highlightRect(forCharacterRange range: NSRange,
+                              in tv: NSTextView,
+                              lineIndex: SourceLineIndex) -> NSRect? {
+        guard range.length > 0,
+              let layout = tv.layoutManager,
+              let container = tv.textContainer else { return nil }
+        let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        guard glyphs.length > 0 else { return nil }
+        let box = toViewRect(layout.boundingRect(forGlyphRange: glyphs, in: container),
+                             inset: tv.textContainerInset)
+        guard !box.isEmpty else { return nil }
+        return NSRect(x: 0, y: box.minY, width: tv.bounds.width, height: box.height)
+    }
+
+    private static func fragments(layout: NSLayoutManager,
+                                  container: NSTextContainer,
+                                  inset: NSSize,
+                                  lineIndex: SourceLineIndex,
+                                  glyphRange: NSRange,
+                                  textLength: Int) -> [Fragment] {
+        guard textLength > 0 else { return [] }
+        var result: [Fragment] = []
+        var glyph = glyphRange.location
+        let end = NSMaxRange(glyphRange)
+        while glyph < end {
+            var effective = NSRange()
+            let used = layout.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: &effective)
+            let character = layout.characterIndexForGlyph(at: glyph)
+            // 文末换行之后 NSTextView 仍有一个空片段，它不对应真实行，跳过。
+            guard character < textLength else { break }
+            let line = lineIndex.line(ofCharacter: character)
+            result.append(Fragment(line: line,
+                                   isFirstOfLine: character == lineIndex.start(ofLine: line),
+                                   rect: toViewRect(used, inset: inset)))
+            glyph = NSMaxRange(effective)
+        }
+        return result
+    }
+
+    private static func currentTextLength(of tv: NSTextView) -> Int {
+        (tv.string as NSString).length
+    }
+}
+
+/// 源码视图行号栏：作为文本视图的子视图固定在左侧，随内容滚动而无需重绘。
+/// 视觉沿用渲染端代码块行号栏（reader.css 的 .code-gutter）：等宽、右对齐、灰色、不可选中。
+final class LineNumberGutterView: NSView {
+    weak var textView: NSTextView?
+    var lineIndex = SourceLineIndex("")
+    /// 当前行行号（0 基），nil 表示无当前行。
+    var activeLine: Int? {
+        didSet {
+            guard activeLine != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+    var numberColor: NSColor = .secondaryLabelColor {
+        didSet { needsDisplay = true }
+    }
+    var activeNumberColor: NSColor = .labelColor {
+        didSet { needsDisplay = true }
+    }
+    var numberFont: NSFont = .monospacedSystemFont(ofSize: 13, weight: .regular) {
+        didSet { needsDisplay = true }
+    }
+
+    /// 数字左边距：行号栏左缘到首位数字。原先隐含 16pt，是「数字离正文太远」的主要来源。
+    static let leftPad: CGFloat = 4
+    /// 数字右边距：末位数字到行号栏右缘。
+    static let numberRightPad: CGFloat = 6
+    /// 行号栏右缘到正文起始的间距。
+    static let textGap: CGFloat = 6
+
+    /// 行号栏宽度：位数决定，= 左边距 + 数字总宽 + 数字右边距。
+    static func width(forLineCount count: Int, font: NSFont) -> CGFloat {
+        let digits = max(2, String(count).count)
+        let digitWidth = NSAttributedString(string: "0", attributes: [.font: font]).size().width
+        return ceil(CGFloat(digits) * digitWidth) + leftPad + numberRightPad
+    }
+
+    // 与文本视图同为 flipped，绘制时直接使用布局矩形坐标。
+    override var isFlipped: Bool { true }
+    override var isOpaque: Bool { false }
+    /// 不接管命中测试：点行号仍要能选中文本。
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let tv = textView, bounds.width > 0 else { return }
+        // 先填底再画：本视图非 opaque，原先直接画数字，旧数字没有任何东西盖掉。
+        // 拖动窗口重排时新数字画在新位置、旧数字留在原位 —— 表现为行号重影且位置不动，
+        // 松手触发整窗重绘才恢复正常。底色取正文文本视图的背景色，视觉上无缝。
+        tv.backgroundColor.setFill()
+        bounds.fill()
+        for fragment in SourceLineLayout.visibleFragments(in: tv, lineIndex: lineIndex, clip: dirtyRect)
+        where fragment.isFirstOfLine {
+            // 软换行的续行留空：同一逻辑行只在首个片段上标号。
+            let color = fragment.line == activeLine ? activeNumberColor : numberColor
+            let label = NSAttributedString(string: String(fragment.line + 1),
+                                           attributes: [.font: numberFont, .foregroundColor: color])
+            let size = label.size()
+            label.draw(at: NSPoint(x: bounds.width - LineNumberGutterView.numberRightPad - size.width,
+                                   y: fragment.rect.minY + (fragment.rect.height - size.height) / 2))
+        }
+    }
 }
 
 @MainActor
-final class SourceTextCoordinator: NSObject {
+final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
     private let renderer: MarkdownRenderer
     private weak var scrollView: NSScrollView?
     private weak var textView: NSTextView?
+    private var gutter: LineNumberGutterView?
     private var docName: String?
     private var currentText = ""
+    private var lineIndex = SourceLineIndex("")
     private var headings: [(id: String, range: NSRange)] = []
     private var headingY: [String: CGFloat] = [:]
     nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
@@ -960,12 +1144,23 @@ final class SourceTextCoordinator: NSObject {
         tv.isSelectable = true
         tv.isRichText = false
         tv.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-        tv.textContainerInset = NSSize(width: 28, height: 28)
+        tv.textContainerInset = NSSize(width: LineNumberGutterView.width(forLineCount: 1, font: tv.font!)
+                                            + LineNumberGutterView.textGap,
+                                       height: 28)
         tv.textContainer?.widthTracksTextView = true
         tv.isVerticallyResizable = true
         tv.isHorizontallyResizable = false
         tv.autoresizingMask = [.width]
+        tv.delegate = self
         scroll.documentView = tv
+
+        // 行号栏：文本视图子视图，跟随内容滚动，滚动时无需重绘。
+        let gutter = LineNumberGutterView(frame: NSRect(x: 0, y: 0, width: 46, height: 1))
+        gutter.textView = tv
+        gutter.numberFont = tv.font!
+        gutter.autoresizingMask = [.width, .height]
+        tv.addSubview(gutter)
+        self.gutter = gutter
 
         scrollView = scroll
         textView = tv
@@ -977,6 +1172,12 @@ final class SourceTextCoordinator: NSObject {
                                             object: scroll.contentView,
                                             queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.handleScroll() }
+        })
+        // 宽度变化会改变软换行位置：行号与高亮都要按新排版重画。
+        observers.append(center.addObserver(forName: NSView.frameDidChangeNotification,
+                                            object: tv,
+                                            queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleFrameChange() }
         })
         observers.append(center.addObserver(forName: .mdreviewSourceScroll,
                                             object: nil,
@@ -1023,17 +1224,31 @@ final class SourceTextCoordinator: NSObject {
                 NotificationCenter.default.post(name: .mdreviewSourceSelection, object: selection)
             }
         })
+        // 右键菜单的 Copy：显式指定目标文本视图，绕开「菜单弹出后响应链起点不是 NSTextView」的问题。
+        observers.append(center.addObserver(forName: .mdreviewSourceCopy,
+                                            object: nil,
+                                            queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let tv = self?.textView else { return }
+                NSApp.sendAction(Selector(("copy:")), to: tv, from: nil)
+            }
+        })
         return scroll
     }
 
     func update(scroll: NSScrollView, text: String, docName: String?, appearance: AppearanceMode) {
-        guard textView != nil else { return }
+        guard let tv = textView as? ThemedTextView else { return }
         let docChanged = docName != self.docName
         self.docName = docName
         if text != currentText {
             currentText = text
-            textView?.string = text
+            lineIndex = SourceLineIndex(text)
+            tv.string = text
+            // 必须在写入之后同步：文本视图的高度在写入时才最终确定，
+            // 行号栏尺寸早一步就会停在旧高度上，导致 draw 拿到空 dirtyRect。
+            applyGutterMetrics()
             rebuildHeadings()
+            updateSelectionHighlight()
             if !searchTerm.isEmpty { search(searchTerm) }
         }
         if docChanged || !restored {
@@ -1043,9 +1258,71 @@ final class SourceTextCoordinator: NSObject {
         refreshAppearance()
     }
 
+    /// 选区变化（含点选、拖选、搜索跳转）时刷新当前行高亮与行号强调。
+    func textViewDidChangeSelection(_ notification: Notification) {
+        updateSelectionHighlight()
+    }
+
+    /// 行号位数随文档行数变化，行号栏宽度与文本左边距一起跟着调整。
+    private func applyGutterMetrics() {
+        guard textView != nil else { return }
+        syncGutterFrame()
+        gutter?.lineIndex = lineIndex
+        gutter?.needsDisplay = true
+    }
+
+    /// 行号栏尺寸必须显式跟着文本视图走：文本视图初始为 0×0，
+    /// 只靠 autoresizing 会在赋值 documentView 时序里留下 0 尺寸，
+    /// 结果是 draw 拿到空 dirtyRect，一个行号都不画。
+    private func syncGutterFrame() {
+        guard let tv = textView, let gutter else { return }
+        let font = tv.font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let width = LineNumberGutterView.width(forLineCount: lineIndex.count, font: font)
+        let target = NSRect(x: 0, y: 0, width: width, height: tv.frame.height)
+        if gutter.frame != target { gutter.frame = target }
+        tv.textContainerInset = NSSize(width: width + LineNumberGutterView.textGap, height: 28)
+    }
+
+    /// 当前行 = 选区首字符所在行；多行选区整段高亮，行号强调落在首行。
+    private func updateSelectionHighlight() {
+        guard let tv = textView as? ThemedTextView, let gutter else { return }
+        let length = currentText.utf16.count
+        guard length > 0 else {
+            tv.highlightRect = nil
+            gutter.activeLine = nil
+            return
+        }
+        let selection = tv.selectedRange()
+        let first = min(max(selection.location, 0), length - 1)
+        let last = min(max(NSMaxRange(selection) - 1, first), length - 1)
+        let startLine = lineIndex.line(ofCharacter: first)
+        let endLine = lineIndex.line(ofCharacter: last)
+        gutter.activeLine = startLine
+        // 扩到整行：起点取首行行首，终点取下一行行首；已经是最后一行则取文末。
+        let rangeStart = lineIndex.start(ofLine: startLine)
+        let rangeEnd = endLine + 1 < lineIndex.count ? lineIndex.start(ofLine: endLine + 1) : length
+        guard rangeEnd > rangeStart else {
+            tv.highlightRect = nil
+            return
+        }
+        tv.highlightRect = SourceLineLayout.highlightRect(
+            forCharacterRange: NSRange(location: rangeStart, length: rangeEnd - rangeStart),
+            in: tv,
+            lineIndex: lineIndex)
+    }
+
+    /// 文本视图尺寸变化：高度随文档增长、宽度随窗口变化，
+    /// 行号栏尺寸与换行位置都要跟着重算。
+    private func handleFrameChange() {
+        guard textView != nil else { return }
+        syncGutterFrame()
+        gutter?.needsDisplay = true
+        updateSelectionHighlight()
+    }
+
     /// 主题切换 / 系统外观变化时刷新源码视图文本与背景（现有文本属性同步更新）。
     private func refreshAppearance() {
-        guard let tv = textView, let scroll = scrollView else { return }
+        guard let tv = textView as? ThemedTextView, let scroll = scrollView else { return }
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let textColor: NSColor = (dark ? NSColor.white : NSColor.black).withAlphaComponent(0.82)
         let background: NSColor = dark
@@ -1055,6 +1332,20 @@ final class SourceTextCoordinator: NSObject {
         tv.backgroundColor = background
         scroll.backgroundColor = background
         scroll.drawsBackground = true
+        // 行号栏配色沿用渲染端代码块行号栏（reader.css .code-gutter）的克制灰，
+        // 当前行用接近正文的颜色保证「哪一行是当前行」一眼可辨。
+        gutter?.numberColor = dark
+            ? NSColor(calibratedWhite: 0.62, alpha: 0.75)
+            : NSColor(calibratedWhite: 0.45, alpha: 0.80)
+        gutter?.activeNumberColor = dark
+            ? NSColor(calibratedWhite: 0.96, alpha: 1)
+            : NSColor(calibratedWhite: 0.05, alpha: 1)
+        // 填充色取「文字色的方向」，所以叠在文字上不会洗掉文字：
+        // 亮色文字是黑的、用黑填充；暗色文字是白的、用白填充。
+        // 暗色原先用 black 0.22 —— 在 #262626 的暗底上继续压暗，方向反了，等于没有高亮。
+        tv.highlightColor = dark
+            ? NSColor.white.withAlphaComponent(0.10)
+            : NSColor.black.withAlphaComponent(0.12)
         let length = tv.string.utf16.count
         if length > 0 {
             tv.textStorage?.beginEditing()

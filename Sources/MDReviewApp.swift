@@ -225,6 +225,7 @@ extension Notification.Name {
     static let mdreviewSourceSearchPrev = Notification.Name("mdreview.sourceSearchPrev")
     static let mdreviewSourceGetSelection = Notification.Name("mdreview.sourceGetSelection")
     static let mdreviewSourceSelection = Notification.Name("mdreview.sourceSelection")
+    static let mdreviewSourceCopy = Notification.Name("mdreview.sourceCopy")
 }
 
 private func postMenuAction(_ action: MenuAction) {

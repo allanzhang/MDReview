@@ -63,6 +63,13 @@ function runMainMenuLocalizerTests() {
   ], { frameworks: ['AppKit'] });
 }
 
+function runSourceLineIndexTests() {
+  compileAndRun('source-line-index-tests', [
+    path.join(__dirname, '..', 'Sources', 'SourceLineIndex.swift'),
+    path.join(__dirname, 'SourceLineIndexTests.swift')
+  ], { parseAsLibrary: true });
+}
+
 function runSwiftIntegrityTests() {
   compileAndRun('update-integrity-tests', [
     path.join(__dirname, '..', 'Sources', 'UpdateIntegrity.swift'),
@@ -124,6 +131,24 @@ function runCodeFoldAndDropContractTests() {
   }
   if (!renderer.includes('decidePolicyFor navigationAction')) {
     failures.push('WKWebView must intercept dropped markdown navigations');
+  }
+
+  // 源码视图行号栏：删掉会让行号与当前行高亮整体消失，且不留任何痕迹。
+  if (!content.includes('LineNumberGutterView')) {
+    failures.push('源码视图必须挂载行号栏 LineNumberGutterView');
+  }
+  if (!content.includes('isFirstOfLine')) {
+    failures.push('行号必须按逻辑行首片段标注，续行留空');
+  }
+  if (!/gutter\.hitTest\(_ point: NSPoint\) -> NSView\? \{ nil \}/.test(content)
+      && !/override func hitTest\(_ point: NSPoint\) -> NSView\? \{ nil \}/.test(content)) {
+    failures.push('行号栏必须 hitTest 返回 nil，否则点行号会抢走文本选区');
+  }
+  if (!content.includes('textViewDidChangeSelection')) {
+    failures.push('源码视图必须监听选区变化以刷新当前行高亮');
+  }
+  if (!content.includes('highlightColor')) {
+    failures.push('ThemedTextView 必须绘制当前行高亮');
   }
 
   if (failures.length > 0) {
@@ -221,6 +246,7 @@ runMainMenuLocalizerTests();
 runSwiftIntegrityTests();
 runDocStateTests();
 runMarkdownFileDropTests();
+runSourceLineIndexTests();
 runCodeFoldAndDropContractTests();
 runViewStructureContractTests();
 runSingleWindowSceneTests();
