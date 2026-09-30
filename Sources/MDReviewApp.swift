@@ -18,7 +18,7 @@ struct MDReviewApp: App {
             RootView()
         }
         .defaultSize(width: 1180, height: 800)
-        .windowResizability(.contentSize)
+        .windowResizability(.automatic)
         .commands {
             AppCommands(
                 resolvedLanguage: menu.resolvedLanguage,

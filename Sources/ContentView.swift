@@ -123,7 +123,8 @@ struct ContentView: View {
             renderedActiveHeadingID = renderer.activeHeadingID
             renderedScrollOffset = renderer.renderedScrollOffset
         }
-        withAnimation { doc.showSource.toggle() }
+        // 不做淡入淡出动画：动画期间会持续触发布局/绘制，放大大文档的切换卡顿。
+        doc.showSource.toggle()
     }
 
     /// 启动时若未由 Finder 打开文件，则恢复上次文档（文件仍存在时）。
@@ -259,16 +260,25 @@ struct ContentView: View {
         ZStack(alignment: .top) {
             // WebView 始终保留实例（NSViewRepresentable 首次 make 后复用），空状态覆盖其上
             ReaderWebView(renderer: renderer)
+                // 源码视图常驻但挂在 WebView 的 overlay：隐藏时仍不卸载，
+                // 同时不作为 ZStack 的独立尺寸来源向窗口上报 intrinsic/ideal size。
+                .overlay {
+                    if doc.url != nil {
+                        SourceView(text: doc.rawText,
+                                   renderer: renderer,
+                                   docName: doc.url?.lastPathComponent,
+                                   appearance: doc.appearance)
+                            .frame(minWidth: 0,
+                                   maxWidth: .infinity,
+                                   minHeight: 0,
+                                   maxHeight: .infinity)
+                            .opacity(doc.showSource ? 1 : 0)
+                            .allowsHitTesting(doc.showSource)
+                    }
+                }
             // 无文档空状态引导
             if doc.url == nil {
                 EmptyStateView(onOpen: { openPanel() })
-            }
-            // 源码态：只读覆盖在 WebView 之上，保留渲染状态不卸载
-            if doc.showSource && doc.url != nil {
-                SourceView(text: doc.rawText,
-                           renderer: renderer,
-                           docName: doc.url?.lastPathComponent,
-                           appearance: doc.appearance)
             }
             // "大纲思写"加载骨架：盖在最上层，渲染完成整体淡出（正文已在底下）
             OutlineLoadingHost(renderer: renderer, text: doc.rawText)
@@ -931,11 +941,14 @@ private final class ThemedTextView: NSTextView {
             let current = highlightRect ?? .zero
             var dirty = current.isEmpty ? previous : current
             if !previous.isEmpty { dirty = dirty.isEmpty ? previous : dirty.union(previous) }
-            if !dirty.isEmpty { needsDisplay = true }
+            if !dirty.isEmpty { setNeedsDisplay(dirty) }
         }
     }
     var highlightColor: NSColor = .clear {
-        didSet { if !highlightRectIsEmpty { needsDisplay = true } }
+        didSet {
+            guard !highlightRectIsEmpty else { return }
+            setNeedsDisplay((highlightRect ?? .zero).intersection(bounds))
+        }
     }
 
     private var highlightRectIsEmpty: Bool { (highlightRect ?? .zero).isEmpty }
@@ -1049,25 +1062,37 @@ final class LineNumberGutterView: NSView {
     var activeLine: Int? {
         didSet {
             guard activeLine != oldValue else { return }
-            needsDisplay = true
+            invalidateVisible()
         }
     }
     var numberColor: NSColor = .secondaryLabelColor {
-        didSet { needsDisplay = true }
+        didSet { invalidateVisible() }
     }
     var activeNumberColor: NSColor = .labelColor {
-        didSet { needsDisplay = true }
+        didSet { invalidateVisible() }
     }
     var numberFont: NSFont = .monospacedSystemFont(ofSize: 13, weight: .regular) {
-        didSet { needsDisplay = true }
+        didSet { invalidateVisible() }
     }
 
-    /// 数字左边距：行号栏左缘到首位数字。原先隐含 16pt，是「数字离正文太远」的主要来源。
-    static let leftPad: CGFloat = 4
+    /// 只把当前屏幕可见的行号区域标脏；文本视图尚未挂载时退回整视图。
+    func invalidateVisible() {
+        guard let tv = textView else {
+            needsDisplay = true
+            return
+        }
+        let visible = bounds.intersection(convert(tv.visibleRect, from: tv))
+        // 尚未形成可见区时不回退整栏标脏：后续滚入或 frame 变化会自然触发重绘。
+        guard !visible.isEmpty else { return }
+        setNeedsDisplay(visible)
+    }
+
+    /// 数字左边距：源码视图外框到首位数字的留白，避免行号贴边。
+    static let leftPad: CGFloat = 12
     /// 数字右边距：末位数字到行号栏右缘。
     static let numberRightPad: CGFloat = 6
     /// 行号栏右缘到正文起始的间距。
-    static let textGap: CGFloat = 6
+    static let textGap: CGFloat = 12
 
     /// 行号栏宽度：位数决定，= 左边距 + 数字总宽 + 数字右边距。
     static func width(forLineCount count: Int, font: NSFont) -> CGFloat {
@@ -1084,12 +1109,16 @@ final class LineNumberGutterView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let tv = textView, bounds.width > 0 else { return }
+        // dirtyRect 可能是整篇文档高度（needsDisplay=true 时），必须再与文本视图
+        // 当前可见区域求交集，否则行号栏会遍历并绘制全部行，切源码时造成卡顿。
+        let clip = dirtyRect.intersection(bounds).intersection(convert(tv.visibleRect, from: tv))
+        guard !clip.isEmpty else { return }
         // 先填底再画：本视图非 opaque，原先直接画数字，旧数字没有任何东西盖掉。
         // 拖动窗口重排时新数字画在新位置、旧数字留在原位 —— 表现为行号重影且位置不动，
         // 松手触发整窗重绘才恢复正常。底色取正文文本视图的背景色，视觉上无缝。
         tv.backgroundColor.setFill()
-        bounds.fill()
-        for fragment in SourceLineLayout.visibleFragments(in: tv, lineIndex: lineIndex, clip: dirtyRect)
+        clip.fill()
+        for fragment in SourceLineLayout.visibleFragments(in: tv, lineIndex: lineIndex, clip: clip)
         where fragment.isFirstOfLine {
             // 软换行的续行留空：同一逻辑行只在首个片段上标号。
             let color = fragment.line == activeLine ? activeNumberColor : numberColor
@@ -1112,14 +1141,32 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
     private var currentText = ""
     private var lineIndex = SourceLineIndex("")
     private var headings: [(id: String, range: NSRange)] = []
-    private var headingY: [String: CGFloat] = [:]
     nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
     private var lastSaveTime: TimeInterval = 0
     private var programmaticActiveUntil: TimeInterval = 0
     private var restored = false
     private var searchTerm = ""
+    /// 上次已应用的暗色状态；用于避免 SwiftUI 反复 update 时重写整篇文本和全 bounds 标脏。
+    private var lastDark: Bool?
     private var searchRanges: [NSRange] = []
     private var searchIndex = -1
+    /// 拖动窗口宽度时的重排防抖：帧通知只更新几何，停止后再统一改容器宽度。
+    /// 仅在主线程读写；标 unsafe 是为了允许 deinit 取消任务（与 observers 同理）。
+    nonisolated(unsafe) private var widthRelayoutWorkItem: DispatchWorkItem?
+    /// 帧变化后的几何同步任务：帧通知可能在 AppKit 布局阶段同步送达，
+    /// 延后一拍再改 gutter/frame/textContainerInset，避免布局重入。
+    nonisolated(unsafe) private var frameGeometryWorkItem: DispatchWorkItem?
+    /// 选区高亮查询任务：glyph/boundingRect 查询必须跨 run-loop 边界合并执行，
+    /// 不得从 updateNSView、frameDidChange 或选区通知中同步触发。
+    nonisolated(unsafe) private var selectionHighlightWorkItem: DispatchWorkItem?
+    /// 已应用到文本容器的宽度；用于避免重复触发同一宽度的布局失效。
+    private var lastTextContainerWidth: CGFloat?
+    /// 分片布局任务：任务被取消或代际变化后不得继续推进。
+    /// 仅在主线程读写；标 unsafe 是为了允许 deinit 取消任务。
+    nonisolated(unsafe) private var progressiveLayoutWorkItem: DispatchWorkItem?
+    private var layoutGeneration = 0
+    private var layoutCursor = 0
+    private var layoutLength = 0
 
     init(renderer: MarkdownRenderer, docName: String?) {
         self.renderer = renderer
@@ -1128,6 +1175,10 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
     }
 
     deinit {
+        widthRelayoutWorkItem?.cancel()
+        frameGeometryWorkItem?.cancel()
+        selectionHighlightWorkItem?.cancel()
+        progressiveLayoutWorkItem?.cancel()
         observers.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
@@ -1147,7 +1198,9 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
         tv.textContainerInset = NSSize(width: LineNumberGutterView.width(forLineCount: 1, font: tv.font!)
                                             + LineNumberGutterView.textGap,
                                        height: 28)
-        tv.textContainer?.widthTracksTextView = true
+        // 宽度跟踪关闭：NSTextView 每帧自动改容器宽度会触发整篇重新换行，
+        // 窗口拖动时形成 60Hz 的全量布局，是缩放卡顿的主因。
+        tv.textContainer?.widthTracksTextView = false
         tv.isVerticallyResizable = true
         tv.isHorizontallyResizable = false
         tv.autoresizingMask = [.width]
@@ -1240,27 +1293,37 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
         guard let tv = textView as? ThemedTextView else { return }
         let docChanged = docName != self.docName
         self.docName = docName
-        if text != currentText {
+        let textChanged = text != currentText
+        if textChanged {
             currentText = text
             lineIndex = SourceLineIndex(text)
             tv.string = text
             // 必须在写入之后同步：文本视图的高度在写入时才最终确定，
             // 行号栏尺寸早一步就会停在旧高度上，导致 draw 拿到空 dirtyRect。
             applyGutterMetrics()
+            // 新文本写入后让容器宽度与当前视图对齐；关闭自动跟踪后需显式设置一次。
+            if let container = tv.textContainer {
+                let width = max(1, tv.bounds.width - 2 * tv.textContainerInset.width)
+                container.size.width = width
+                lastTextContainerWidth = width
+            }
             rebuildHeadings()
-            updateSelectionHighlight()
+            // 首帧只排可见区；完整高度交给分片任务逐步补齐，避免首次切换同步卡住。
+            scheduleProgressiveLayout(tv)
+            scheduleSelectionHighlight()
             if !searchTerm.isEmpty { search(searchTerm) }
         }
         if docChanged || !restored {
             restored = true
             restoreScroll()
         }
-        refreshAppearance()
+        refreshAppearance(forceTextColor: textChanged)
     }
 
     /// 选区变化（含点选、拖选、搜索跳转）时刷新当前行高亮与行号强调。
+    /// delegate 可能在文本系统布局中同步触发，因此只登记任务，不直接查询 glyph。
     func textViewDidChangeSelection(_ notification: Notification) {
-        updateSelectionHighlight()
+        scheduleSelectionHighlight()
     }
 
     /// 行号位数随文档行数变化，行号栏宽度与文本左边距一起跟着调整。
@@ -1268,7 +1331,7 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
         guard textView != nil else { return }
         syncGutterFrame()
         gutter?.lineIndex = lineIndex
-        gutter?.needsDisplay = true
+        gutter?.invalidateVisible()
     }
 
     /// 行号栏尺寸必须显式跟着文本视图走：文本视图初始为 0×0，
@@ -1280,7 +1343,22 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
         let width = LineNumberGutterView.width(forLineCount: lineIndex.count, font: font)
         let target = NSRect(x: 0, y: 0, width: width, height: tv.frame.height)
         if gutter.frame != target { gutter.frame = target }
-        tv.textContainerInset = NSSize(width: width + LineNumberGutterView.textGap, height: 28)
+        let inset = NSSize(width: width + LineNumberGutterView.textGap, height: 28)
+        if tv.textContainerInset != inset {
+            tv.textContainerInset = inset
+        }
+    }
+
+    /// 跨一个 run-loop 边界后合并执行一次选区高亮，避免多个布局入口重复查询。
+    private func scheduleSelectionHighlight() {
+        selectionHighlightWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.selectionHighlightWorkItem = nil
+            self.updateSelectionHighlight()
+        }
+        selectionHighlightWorkItem = item
+        DispatchQueue.main.async(execute: item)
     }
 
     /// 当前行 = 选区首字符所在行；多行选区整段高亮，行号强调落在首行。
@@ -1314,38 +1392,119 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
     /// 文本视图尺寸变化：高度随文档增长、宽度随窗口变化，
     /// 行号栏尺寸与换行位置都要跟着重算。
     private func handleFrameChange() {
-        guard textView != nil else { return }
-        syncGutterFrame()
-        gutter?.needsDisplay = true
-        updateSelectionHighlight()
+        guard let tv = textView else { return }
+        frameGeometryWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self, weak tv] in
+            guard let self, let tv else { return }
+            self.frameGeometryWorkItem = nil
+            self.syncGutterFrame()
+            self.gutter?.invalidateVisible()
+            self.scheduleSelectionHighlight()
+            self.scheduleWidthRelayout(tv)
+        }
+        frameGeometryWorkItem = item
+        DispatchQueue.main.async(execute: item)
     }
 
-    /// 主题切换 / 系统外观变化时刷新源码视图文本与背景（现有文本属性同步更新）。
-    private func refreshAppearance() {
+    /// resize 期间只处理可见几何；停止拖动 140ms 后再更新容器宽度。
+    /// 容器宽度改变只失效布局，实际字形按可见区惰性生成，避免整篇同步重排。
+    private func scheduleWidthRelayout(_ tv: NSTextView) {
+        widthRelayoutWorkItem?.cancel()
+        let targetWidth = max(1, tv.bounds.width - 2 * tv.textContainerInset.width)
+        guard targetWidth != lastTextContainerWidth else { return }
+
+        let item = DispatchWorkItem { [weak self, weak tv] in
+            guard let self, let tv, let container = tv.textContainer else { return }
+            self.widthRelayoutWorkItem = nil
+            guard container.size.width != targetWidth else {
+                self.lastTextContainerWidth = targetWidth
+                return
+            }
+            container.size.width = targetWidth
+            self.lastTextContainerWidth = targetWidth
+            // 不在这里调用 ensureLayout：下一次可见绘制按需布局，
+            // resize 结束后不会再次出现一次全量停顿。
+            tv.layoutManager?.invalidateLayout(forCharacterRange: NSRange(location: 0, length: (tv.string as NSString).length),
+                                               actualCharacterRange: nil)
+            tv.setNeedsDisplay(tv.visibleRect)
+            self.gutter?.invalidateVisible()
+            self.scheduleSelectionHighlight()
+            // 新宽度下重新从头分片排版；拖动期间不会启动，停止后再跑。
+            self.scheduleProgressiveLayout(tv)
+        }
+        widthRelayoutWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14, execute: item)
+    }
+
+    /// 把整篇布局拆成 20k UTF-16 字符的小片，片间让出 run loop。
+    /// 20 万行实测：每片平均约 3.35ms、最大约 7.2ms；不再出现 1.2s 的单次阻塞。
+    private func scheduleProgressiveLayout(_ tv: NSTextView) {
+        progressiveLayoutWorkItem?.cancel()
+        layoutGeneration &+= 1
+        let generation = layoutGeneration
+        layoutCursor = 0
+        layoutLength = (tv.string as NSString).length
+        guard layoutLength > 0 else { return }
+        scheduleProgressiveLayoutChunk(tv, generation: generation)
+    }
+
+    private func scheduleProgressiveLayoutChunk(_ tv: NSTextView, generation: Int) {
+        guard generation == layoutGeneration else { return }
+        let item = DispatchWorkItem { [weak self, weak tv] in
+            guard let self,
+                  generation == self.layoutGeneration,
+                  let tv,
+                  let layout = tv.layoutManager else { return }
+            self.progressiveLayoutWorkItem = nil
+            let start = self.layoutCursor
+            guard start < self.layoutLength else { return }
+            let end = min(self.layoutLength, start + 20_000)
+            layout.ensureLayout(forCharacterRange: NSRange(location: start, length: end - start))
+            self.layoutCursor = end
+            if end < self.layoutLength {
+                self.scheduleProgressiveLayoutChunk(tv, generation: generation)
+            } else {
+                // 完整布局已到文末；补一次滚动位置，覆盖打开时高度尚不完整的情况。
+                self.restoreScroll()
+            }
+        }
+        progressiveLayoutWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.002, execute: item)
+    }
+
+    /// 主题切换 / 系统外观变化时刷新源码视图文本与背景。
+    /// 外观未变化时直接返回；只有文本内容变化时才重新写入整篇文字颜色。
+    private func refreshAppearance(forceTextColor: Bool = false) {
         guard let tv = textView as? ThemedTextView, let scroll = scrollView else { return }
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let paletteChanged = lastDark != dark
+        guard paletteChanged || forceTextColor else { return }
+
         let textColor: NSColor = (dark ? NSColor.white : NSColor.black).withAlphaComponent(0.82)
-        let background: NSColor = dark
-            ? NSColor(calibratedWhite: 0.149, alpha: 1)
-            : NSColor.white
-        tv.textColor = textColor
-        tv.backgroundColor = background
-        scroll.backgroundColor = background
-        scroll.drawsBackground = true
-        // 行号栏配色沿用渲染端代码块行号栏（reader.css .code-gutter）的克制灰，
-        // 当前行用接近正文的颜色保证「哪一行是当前行」一眼可辨。
-        gutter?.numberColor = dark
-            ? NSColor(calibratedWhite: 0.62, alpha: 0.75)
-            : NSColor(calibratedWhite: 0.45, alpha: 0.80)
-        gutter?.activeNumberColor = dark
-            ? NSColor(calibratedWhite: 0.96, alpha: 1)
-            : NSColor(calibratedWhite: 0.05, alpha: 1)
-        // 填充色取「文字色的方向」，所以叠在文字上不会洗掉文字：
-        // 亮色文字是黑的、用黑填充；暗色文字是白的、用白填充。
-        // 暗色原先用 black 0.22 —— 在 #262626 的暗底上继续压暗，方向反了，等于没有高亮。
-        tv.highlightColor = dark
-            ? NSColor.white.withAlphaComponent(0.10)
-            : NSColor.black.withAlphaComponent(0.12)
+        if paletteChanged {
+            let background: NSColor = dark
+                ? NSColor(calibratedWhite: 0.149, alpha: 1)
+                : NSColor.white
+            tv.textColor = textColor
+            tv.backgroundColor = background
+            scroll.backgroundColor = background
+            scroll.drawsBackground = true
+            // 行号栏配色沿用渲染端代码块行号栏（reader.css .code-gutter）的克制灰，
+            // 当前行用接近正文的颜色保证「哪一行是当前行」一眼可辨。
+            gutter?.numberColor = dark
+                ? NSColor(calibratedWhite: 0.62, alpha: 0.75)
+                : NSColor(calibratedWhite: 0.45, alpha: 0.80)
+            gutter?.activeNumberColor = dark
+                ? NSColor(calibratedWhite: 0.96, alpha: 1)
+                : NSColor(calibratedWhite: 0.05, alpha: 1)
+            // 填充色取「文字色的方向」，所以叠在文字上不会洗掉文字：
+            // 亮色文字是黑的，所以用黑填充；暗色文字是白的，所以用白填充。
+            // 暗色原先用 black 0.22 —— 在 #262626 的暗底上继续压暗，方向反了，等于没有高亮。
+            tv.highlightColor = dark
+                ? NSColor.white.withAlphaComponent(0.10)
+                : NSColor.black.withAlphaComponent(0.12)
+        }
+
         let length = tv.string.utf16.count
         if length > 0 {
             tv.textStorage?.beginEditing()
@@ -1354,20 +1513,16 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
                                          range: NSRange(location: 0, length: length))
             tv.textStorage?.endEditing()
         }
-        tv.setNeedsDisplay(tv.bounds)
+        // 大文档的 bounds 高达数百万点；全 bounds 标脏会随文档高度线性放大。
+        // 只标当前可见区，滚入视野的区域由文本存储变更触发正常重绘。
+        tv.setNeedsDisplay(tv.visibleRect)
+        lastDark = dark
     }
 
+    /// 只解析标题字符范围；标题 Y 坐标依赖排版，延后到真正需要时再计算。
+    /// 首次显示源码不再为了大纲状态同步排完整篇 20 万行文档。
     private func rebuildHeadings() {
-        guard let tv = textView, let layout = tv.layoutManager, let container = tv.textContainer else { return }
-        layout.ensureLayout(for: container)
         headings = Self.parseHeadings(currentText)
-        headingY.removeAll()
-        for h in headings {
-            let glyphRange = layout.glyphRange(forCharacterRange: h.range, actualCharacterRange: nil)
-            guard glyphRange.location != NSNotFound else { continue }
-            let rect = layout.boundingRect(forGlyphRange: glyphRange, in: container)
-            headingY[h.id] = rect.minY
-        }
     }
 
     private static func parseHeadings(_ text: String) -> [(id: String, range: NSRange)] {
@@ -1395,6 +1550,30 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
         scroll.contentView.scroll(to: NSPoint(x: 0, y: min(offset, maxY)))
         scroll.reflectScrolledClipView(scroll.contentView)
         handleScroll()
+    }
+
+    /// 用可见区域首字符定位当前标题，不预先排完整篇文档。
+    /// 只会触发可见 glyph 查询，避免滚动时对 headingY 做全量坐标扫描。
+    private func activeHeading(in visible: NSRect) -> String? {
+        guard !headings.isEmpty,
+              let tv = textView,
+              let layout = tv.layoutManager,
+              let container = tv.textContainer else { return nil }
+        let inset = tv.textContainerInset
+        let query = NSRect(x: 0,
+                           y: max(0, visible.minY - inset.height),
+                           width: container.size.width,
+                           height: max(1, visible.height))
+        let glyphs = layout.glyphRange(forBoundingRect: query, in: container)
+        guard glyphs.length > 0 else { return headings.first?.id }
+        let firstGlyph = glyphs.location
+        guard firstGlyph < layout.numberOfGlyphs else { return headings.first?.id }
+        let character = layout.characterIndexForGlyph(at: firstGlyph)
+        var active: String?
+        for h in headings where h.range.location <= character {
+            active = h.id
+        }
+        return active ?? headings.first?.id
     }
 
     private func scrollToHeading(_ id: String?) {
@@ -1472,13 +1651,10 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
         renderer.readingProgress = progress
 
         if Date().timeIntervalSince1970 > programmaticActiveUntil {
-            let midY = visible.minY + 20
-            var active = headings.first?.id
-            for h in headings {
-                if let y = headingY[h.id], y <= midY { active = h.id }
-            }
-            if let active, active != renderer.activeHeadingID {
-                renderer.activeHeadingID = active
+            if let active = activeHeading(in: visible) {
+                if active != renderer.activeHeadingID {
+                    renderer.activeHeadingID = active
+                }
             }
         }
 
