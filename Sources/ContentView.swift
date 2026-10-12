@@ -1167,6 +1167,8 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
     private var layoutGeneration = 0
     private var layoutCursor = 0
     private var layoutLength = 0
+    /// 因布局尚未推进到选区而挂起的高亮补算终点；分片布局跨过该位置后再算。
+    private var pendingHighlightCharEnd: Int?
 
     init(renderer: MarkdownRenderer, docName: String?) {
         self.renderer = renderer
@@ -1211,7 +1213,12 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
         let gutter = LineNumberGutterView(frame: NSRect(x: 0, y: 0, width: 46, height: 1))
         gutter.textView = tv
         gutter.numberFont = tv.font!
-        gutter.autoresizingMask = [.width, .height]
+        // 只允许高度跟着文本视图走（文档高度）。宽度必须固定：它由行数位数决定，
+        // 与窗口宽度无关；一旦挂上 .width，窗口每次缩放都会把 gutter 宽度累加同样的
+        // delta，而改回目标值的 syncGutterFrame 是 async 且每帧被 cancel，
+        // 实测 9459 次帧通知只修正了 145 次，gutter 宽度在 0~356pt 之间乱飞
+        // （正确值 59），数字按 bounds.width 右对齐，表现为行号横向漂移、时隐时现。
+        gutter.autoresizingMask = [.height]
         tv.addSubview(gutter)
         self.gutter = gutter
 
@@ -1383,6 +1390,15 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
             tv.highlightRect = nil
             return
         }
+        // 宽度重排刚把整篇布局失效：此时对选区做 boundingRect 会同步补齐从失效点
+        // 到选区的全部排版空洞（实测单次 250~717ms、占主线程 38%），表现为拖动卡顿。
+        // 分片布局推进过选区前先挂起；该区域尚未排版、本就不会被绘制，跳过不可见，
+        // 待分片布局跨过选区时补算（此时排版已在，查询实测 0.06~0.19ms）。
+        if layoutCursor < rangeEnd, layoutCursor < layoutLength {
+            pendingHighlightCharEnd = rangeEnd
+            return
+        }
+        pendingHighlightCharEnd = nil
         tv.highlightRect = SourceLineLayout.highlightRect(
             forCharacterRange: NSRange(location: rangeStart, length: rangeEnd - rangeStart),
             in: tv,
@@ -1461,6 +1477,11 @@ final class SourceTextCoordinator: NSObject, NSTextViewDelegate {
             let end = min(self.layoutLength, start + 20_000)
             layout.ensureLayout(forCharacterRange: NSRange(location: start, length: end - start))
             self.layoutCursor = end
+            // 分片布局刚覆盖到选区，补上重排时挂起的高亮/当前行号刷新。
+            if let pending = self.pendingHighlightCharEnd, end >= pending {
+                self.pendingHighlightCharEnd = nil
+                self.scheduleSelectionHighlight()
+            }
             if end < self.layoutLength {
                 self.scheduleProgressiveLayoutChunk(tv, generation: generation)
             } else {
