@@ -256,6 +256,7 @@ const suites = [
   'markdown-renderer-regression.js',
   'punctuation-boundary.js',
   'app-extensions.js',
+  'parser-rules.js',
   'commonmark-conformance.js'
 ];
 

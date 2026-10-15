@@ -11,7 +11,7 @@
 - App 默认配置：
 
 ```js
-{ html: true, linkify: true, typographer: true, breaks: true }
+{ html: true, linkify: true, typographer: false, breaks: false }
 ```
 
 - CommonMark 一致性测试使用：
@@ -25,30 +25,29 @@
 ## 支持的语法层
 
 1. **CommonMark 核心**：标题、段落、引用、列表、代码块、行内代码、链接、图片、强调、转义、HTML 等。
-2. **markdown-it 内置 GFM/常用能力**：表格、任务列表、删除线、自动链接、软换行转 `<br>`。
+2. **markdown-it 内置 GFM/常用能力**：表格、双波浪线删除线、自动链接；普通换行保持软换行，不自动替换标点。
 3. **App 扩展插件**：emoji、`==高亮==`、上标、定义列表、脚注。
-4. **App 自定义行内规则**：
-   - `punct_strong`：修复 `**"..."**`、`**（...）**` 等首尾紧邻 Unicode 标点时的粗体配对。
-   - `math`：`$...$` / `$$...$$` 交给 KaTeX。
-   - `tilde`：数字内容 `H~2~O` 转下标，其他 `~文字~` 转删除线。
+4. **App 自定义规则**：
+   - `math`：`$...$` / `$$...$$` 交给 KaTeX，闭合符遵守解析范围及转义。
+   - `tilde`：独立单波浪线中的数字 `H~2~O` 转下标；其他单波浪线保留原文，不借用双波浪线。
+   - `task_lists`：解析阶段识别列表首段的任务标记，复选框只读；转义或实体产生的标记保留原文。
    - `validateLink`：放行合法 `data:image/*`，继续拦截 `javascript:`、`vbscript:`、`file:`。
 
 ## 规则优先级
 
-- 普通粗体、斜体、链接、代码等优先由 markdown-it 的标准规则解析。
-- `punct_strong` 只在标准 flanking 规则无法配对，且粗体内容首尾紧邻 Unicode 标点（P/S 类）时接管。
-- 三连星及以上、转义分隔符、代码跨度、嵌套链接/斜体/代码等由回归语料固定，防止兜底规则改变标准语义。
-- 自定义规则出现异常时应回退到 markdown-it 默认行为，不能阻止正文渲染。
+- 粗体、斜体、链接、代码等由 markdown-it 的标准规则解析，不再使用标点粗体兜底。
+- 自定义行内规则必须遵守 `posMax`；静默探测返回成功时也必须推进解析位置。
+- `^[` 入口优先作为行内脚注处理，脚注正文仍支持上标、下标及数学公式。
+- 正文、大纲与章节分块复用同一次解析的 tokens 和 env，只在安全顶层块边界切分；标题 ID 在渲染前统一生成。
+- 公式标题的大纲使用公式源码文字，避免纯公式标题变为空白。
 
 ## CommonMark 已知差异
 
-`Tests/fixtures/commonmark/divergences.json` 是唯一的允许差异清单。当前有 5 条：
+`Tests/fixtures/commonmark/divergences.json` 是专用 CommonMark profile 的允许差异清单，当前有 3 条等价 HTML 序列化差异；App profile 启用的插件扩展另由回归测试覆盖，不能用此清单代表全部 App 行为。
 
 | Example | 类型 | 说明 |
 |---|---|---|
 | 218 / 239 / 240 | HTML 序列化 | markdown-it 的空 blockquote 不输出内部换行；浏览器渲染等价。 |
-| 380 | App 扩展 | `punct_strong` 会渲染 CommonMark 保留为字面量的引号粗体。 |
-| 392 | App 扩展 | `punct_strong` 会渲染 CommonMark 保留为字面量的标点-only 粗体。 |
 
 新增偏差必须同时满足：测试实际输出与文档说明一致、修改契约、说明为什么不能回到 CommonMark 行为。未登记的偏差会导致 CI 失败。
 

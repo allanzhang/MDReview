@@ -12,8 +12,8 @@ const resourcePath = name => path.join(root, 'Sources', 'Resources', name);
 const APP_CONFIG = Object.freeze({
   html: true,
   linkify: true,
-  typographer: true,
-  breaks: true
+  typographer: false,
+  breaks: false
 });
 
 // CommonMark's reference HTML uses XHTML-style void tags (`<br />`, `<hr />`).

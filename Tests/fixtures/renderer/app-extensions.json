@@ -23,9 +23,15 @@
       "expected": "H<sub>2</sub>O"
     },
     {
-      "name": "single-tilde deletion",
+      "name": "single tildes remain literal",
       "markdown": "~文字~",
-      "expected": "<s>文字</s>"
+      "expected": "~文字~"
+    },
+    {
+      "name": "approximate dates do not form strikethrough",
+      "markdown": "> 其余如 Moonshot/Qwen 的\"10 月 15 日\"、OpenAI（~10/19）、Anthropic（~10/28）、Google（~10/28）、xAI（~10/26）、DeepSeek（~11/12）等日期全部是数据聚合器基于历史节奏的统计推测，**没有任何厂商背书**。",
+      "mode": "block",
+      "expected": "<blockquote>\n<p>其余如 Moonshot/Qwen 的&quot;10 月 15 日&quot;、OpenAI（~10/19）、Anthropic（~10/28）、Google（~10/28）、xAI（~10/26）、DeepSeek（~11/12）等日期全部是数据聚合器基于历史节奏的统计推测，<strong>没有任何厂商背书</strong>。</p>\n</blockquote>\n"
     },
     {
       "name": "GFM strikethrough",
@@ -55,10 +61,10 @@
       "expected": "<a href=\"https://example.com\">https://example.com</a>"
     },
     {
-      "name": "soft break becomes br",
+      "name": "soft break remains soft",
       "markdown": "a\nb",
       "mode": "block",
-      "expected": "<p>a<br>\nb</p>\n"
+      "expected": "<p>a\nb</p>\n"
     },
     {
       "name": "definition list",
@@ -77,9 +83,9 @@
       ]
     },
     {
-      "name": "typographer",
+      "name": "punctuation remains literal",
       "markdown": "\"quotes\" -- ...",
-      "expected": "“quotes” – …"
+      "expected": "&quot;quotes&quot; -- ..."
     }
   ]
 }

@@ -2,9 +2,22 @@
 'use strict';
 
 const assert = require('assert');
-const { loadRenderer } = require('./lib/load-renderer');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const { loadRenderer, root } = require('./lib/load-renderer');
 
 const md = loadRenderer('app');
+const standard = require(path.join(root, 'Sources', 'Resources', 'markdown-it.min.js'))({
+  html: true,
+  linkify: true,
+  typographer: false,
+  breaks: false
+});
+// Keep the app's emoji transform (notably :*) on the standard-parser side too.
+const window = {};
+vm.runInNewContext(fs.readFileSync(path.join(root, 'Sources', 'Resources', 'md-plugins.min.js'), 'utf8'), { window });
+standard.use(window.mdPlugins.emoji);
 
 const patterns = [
   ['both inside', ch => `A**${ch}X${ch}**B`],
@@ -35,9 +48,12 @@ for (let codePoint = 0; codePoint <= 0x10FFFF; codePoint++) {
 
   punctuationCount++;
   for (const [name, makeMarkdown] of patterns) {
-    const html = md.renderInline(makeMarkdown(ch));
-    assert.ok(!html.includes('**'), `${name} leaked raw ** for U+${codePoint.toString(16).toUpperCase()}`);
-    assert.ok(html.includes('<strong>'), `${name} did not produce strong for U+${codePoint.toString(16).toUpperCase()}`);
+    const markdown = makeMarkdown(ch);
+    assert.strictEqual(
+      md.renderInline(markdown),
+      standard.renderInline(markdown),
+      `${name} differs from standard markdown-it for U+${codePoint.toString(16).toUpperCase()}`
+    );
     count++;
   }
 }

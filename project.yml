@@ -17,8 +17,8 @@ targets:
       properties:
         CFBundleName: MDReview
         CFBundleDisplayName: MDReview
-        CFBundleVersion: "17"
-        CFBundleShortVersionString: "1.6.4"
+        CFBundleVersion: "18"
+        CFBundleShortVersionString: "1.7.0"
         LSMinimumSystemVersion: "14.0"
         NSPrincipalClass: NSApplication
         CFBundleDocumentTypes:

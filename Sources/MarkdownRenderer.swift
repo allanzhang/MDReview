@@ -843,7 +843,7 @@ final class MarkdownWebView: WKWebView {
           try {
             // 页面加载即应用外观主题（跟随系统/强制亮/强制暗）
             window.applyTheme && window.applyTheme();
-            window.__mdit = window.markdownit({html:true, linkify:true, typographer:true, breaks:true});
+            window.__mdit = window.markdownit({html:true, linkify:true, typographer:false, breaks:false});
             // —— 放宽 data:image 校验：markdown-it 默认只放行 gif/png/jpeg/webp 的 base64，
             // 否则 ![...](data:image/svg+xml;base64,...) 这类内嵌 SVG 会被当成无效链接、
             // 整段按字面量显示。泛化为任意图片子类型，javascript:/file:/vbscript: 仍拦截。
@@ -857,130 +857,41 @@ final class MarkdownWebView: WKWebView {
                 var P = window.mdPlugins;
                 if(P.emoji){ window.__mdit.use(P.emoji); }
                 if(P.mark){ window.__mdit.use(P.mark); }
-                // 不启用 md-plugins 的 sub（单波浪线 ~x~ 一律当下标）：单波浪线需要按内容
-                // 区分下标（H~2~O 数字）与删除线（~文字~，Typora 习惯），见下方自定义 tilde 规则。
+                // sub 插件接受任意文字；这里只保留自定义数字下标，避免误解析表示“约”的波浪线。
                 if(P.sup){ window.__mdit.use(P.sup); }
                 if(P.deflist){ window.__mdit.use(P.deflist); }
               } catch(e){}
             }
-            // —— 标点粗体兜底：markdown-it 的强调分隔符遵循 CommonMark flanking
-            // 规则，`**` 后紧跟引号/括号等标点、或闭合 `**` 前紧跟标点时，可能被
-            // 判定为不可开启/闭合，随后把后续另一组 `**` 错配成跨段粗体。这里在
-            // inline 解析阶段只接管“首尾紧邻标点且标准 flanking 无法配对”的成对
-            // `**...**`：普通粗体仍交给 markdown-it，避免改变既有语义。
-            //
-            // 标点判定使用 markdown-it 自带的 isPunctChar（Unicode P/S 完整覆盖，
-            // 包含非 BMP 字符），不再维护手写 BMP 字符表；内部内容递归交给 inline
-            // parser，因此链接、斜体、行内代码等嵌套语法仍会正常渲染。
-            function findPunctStrongClose(state, start){
-              var src = state.src;
-              var max = state.posMax;
-              var j = start;
-              var nested = 0;
-              while (j < max){
-                if (src[j] === '\\'){ j += 2; continue; }
-                if (src[j] === '`'){
-                  var tickLen = 1;
-                  while (src[j + tickLen] === '`'){ tickLen++; }
-                  var tick = '';
-                  for (var t = 0; t < tickLen; t++){ tick += '`'; }
-                  var codeClose = src.indexOf(tick, j + tickLen);
-                  if (codeClose >= 0 && codeClose < max){ j = codeClose + tickLen; continue; }
-                }
-                if (src.charCodeAt(j) === 0x2A && src.charCodeAt(j + 1) === 0x2A){
-                  // 三连星及以上交给 markdown-it 的 delimiter 规则处理，避免把
-                  // ***粗体*** 拆成错误的 strong/em 组合。
-                  if (src.charCodeAt(j + 2) === 0x2A || (j > 0 && src.charCodeAt(j - 1) === 0x2A)){
-                    j++;
-                    continue;
-                  }
-                  var delims = state.scanDelims(j, true);
-                  if (nested > 0){
-                    if (delims.can_close){ nested--; j += 2; continue; }
-                    if (delims.can_open){ nested++; j += 2; continue; }
-                  } else if (delims.can_close){
-                    return j;
-                  } else if (delims.can_open){
-                    // `**"one"**B` 的闭合符在 CommonMark 里可能被判成
-                    // can_open；只有它前面也是标点时才把它当闭合符。
-                    var prev = j > 0 ? Array.from(src.slice(0, j)).pop() : '';
-                    if (!prev || !window.__mdit.utils.isPunctChar(prev)){
-                      nested++;
-                      j += 2;
-                      continue;
-                    }
-                    return j;
-                  }
-                  j += 2;
-                  continue;
-                }
-                j++;
-              }
-              return -1;
+            // 上标保留，但 ^[ 必须留给行内脚注规则消费。
+            var supRule = window.__mdit.inline.ruler.__rules__.find(function(rule){ return rule.name === 'sup'; });
+            if (supRule) {
+              var parseSup = supRule.fn;
+              window.__mdit.inline.ruler.at('sup', function(state, silent){
+                if (state.src.slice(state.pos, state.pos + 2) === '^[') { return false; }
+                return parseSup(state, silent);
+              });
             }
-            function hasUnmatchedStrongOpener(state){
-              // markdown-it 会把一个 `**` run 展开成两个 delimiter 记录，这里按
-              // 连续的 token 记录合并 run，并只统计尚未被后续 run 配对的 opener。
-              // 避免把一个已经用于闭合普通粗体的 `**` 误判成新的标点粗体开头。
-              var delimiters = state.delimiters || [];
-              var balance = 0;
-              var i = 0;
-              while (i < delimiters.length){
-                var d = delimiters[i];
-                if (d.marker !== 0x2A || d.length !== 2){ i++; continue; }
-                var open = d.open;
-                var close = d.close;
-                var j = i + 1;
-                while (j < delimiters.length &&
-                       delimiters[j].marker === d.marker &&
-                       delimiters[j].length === d.length &&
-                       delimiters[j].token === delimiters[j - 1].token + 1){
-                  open = open || delimiters[j].open;
-                  close = close || delimiters[j].close;
-                  j++;
-                }
-                if (close && balance > 0){ balance--; }
-                else if (open){ balance++; }
-                i = j;
+            // 只识别列表段落源码开头，避免把转义或实体解码后的文本当成任务。
+            function taskLists(state){
+              for (var i = 0; i + 2 < state.tokens.length; i++) {
+                var item = state.tokens[i];
+                var paragraph = state.tokens[i + 1];
+                var inline = state.tokens[i + 2];
+                if (item.type !== 'list_item_open' || paragraph.type !== 'paragraph_open' || inline.type !== 'inline') { continue; }
+                var match = /^\[([ xX])\](?:[ \t\n]+|$)/.exec(inline.content);
+                if (!match || !inline.children || !inline.children.length || inline.children[0].type !== 'text') { continue; }
+                inline.children[0].content = inline.children[0].content.slice(match[0].length);
+                var checkbox = new state.Token('html_inline', '', 0);
+                checkbox.content = '<input type="checkbox" disabled' + (match[1] === ' ' ? '' : ' checked') + '> ';
+                inline.children.unshift(checkbox);
+                item.attrJoin('class', 'task');
               }
-              return balance > 0;
             }
-            window.__mdit.inline.ruler.before('emphasis', 'punct_strong', function(state, silent){
-              var start = state.pos;
-              var src = state.src;
-              if (src.charCodeAt(start) !== 0x2A || src.charCodeAt(start + 1) !== 0x2A) { return false; }
-              if (src.charCodeAt(start + 2) === 0x2A || (start > 0 && src.charCodeAt(start - 1) === 0x2A)) { return false; }
-              if (hasUnmatchedStrongOpener(state)) { return false; }
-              var end = findPunctStrongClose(state, start + 2);
-              if (end < 0) { return false; }
-              var inner = src.slice(start + 2, end);
-              if (!inner) { return false; }
-              var chars = Array.from(inner);
-              if (!window.__mdit.utils.isPunctChar(chars[0]) &&
-                  !window.__mdit.utils.isPunctChar(chars[chars.length - 1])) { return false; }
-              // 标准 flanking 已能正确配对时保持原行为；只有任一 delimiter 被标点
-              // 阻断时才接管，尽量减少对 CommonMark 语义的影响。
-              var openDelim = state.scanDelims(start, true);
-              var closeDelim = state.scanDelims(end, true);
-              if (openDelim.can_open && closeDelim.can_close) { return false; }
-              if (silent) { return true; }
-              var openToken = state.push('html_inline', '', 0);
-              openToken.content = '<strong>';
-              // 递归解析到独立 token 数组，再合并到当前 state。不能直接传
-              // state.tokens：markdown-it 的 delimiter.token 是数组内相对索引，
-              // 嵌套解析直接追加会让 postProcess 用相对索引修改错误的 token。
-              var nestedTokens = [];
-              state.md.inline.parse(inner, state.md, state.env, nestedTokens);
-              for (var t = 0; t < nestedTokens.length; t++){
-                nestedTokens[t].level += state.level;
-                state.tokens.push(nestedTokens[t]);
-                state.tokens_meta.push(null);
-              }
-              var closeToken = state.push('html_inline', '', 0);
-              closeToken.content = '</strong>';
-              state.pos = end + 2;
-              return true;
-            });
+            if (window.__mdit.core.ruler.__rules__.some(function(rule){ return rule.name === 'footnote_tail'; })) {
+              window.__mdit.core.ruler.before('footnote_tail', 'task_lists', taskLists);
+            } else {
+              window.__mdit.core.ruler.after('inline', 'task_lists', taskLists);
+            }
             // —— 数学公式（$...$ / $$...$$）：在 markdown-it 其他行内规则前拦截，避免
             // breaks 的 <br> 切段、反斜杠转义（\,→,）、强调（*_）等破坏公式源码；
             // 直接用 KaTeX 渲染成 HTML。规则放在 strikethrough 之前（backticks 之后），
@@ -990,12 +901,21 @@ final class MarkdownWebView: WKWebView {
             window.__mdit.inline.ruler.before('strikethrough', 'math', function(state, silent){
               var start = state.pos;
               if (state.src.charCodeAt(start) !== 0x24) { return false; }       // '$'
-              var isDisp = state.src.charCodeAt(start + 1) === 0x24;
+              var isDisp = start + 1 < state.posMax && state.src.charCodeAt(start + 1) === 0x24;
               if (!isDisp && state.src.charCodeAt(start + 1) >= 0x30 && state.src.charCodeAt(start + 1) <= 0x39) { return false; }  // '$'+数字（$60B/$2.7B）为货币金额，仅单边 dollar，非公式
               var openLen = isDisp ? 2 : 1;
               var closeStr = isDisp ? '$$' : '$';
-              var end = state.src.indexOf(closeStr, start + openLen);
-              if (end < 0) { return false; }
+              var end = start + openLen;
+              var brackets = 0;
+              while (end + closeStr.length <= state.posMax) {
+                if (state.src[end] === '\\') { end += 2; continue; }
+                // parseLinkLabel 的预扫描尚未收紧 posMax，不能吞掉标签闭合符。
+                if (silent && state.src[end] === '[') { brackets++; }
+                if (silent && state.src[end] === ']' && brackets-- === 0) { return false; }
+                if (state.src.slice(end, end + closeStr.length) === closeStr) { break; }
+                end++;
+              }
+              if (end + closeStr.length > state.posMax) { return false; }
               var raw = state.src.slice(start + openLen, end);
               if (isDisp) {
                 if (!raw.replace(/\s/g, '')) { return false; }                  // 空公式不处理
@@ -1003,65 +923,81 @@ final class MarkdownWebView: WKWebView {
                 if (raw.indexOf('\n') >= 0) { return false; }
                 if (!raw.trim() || raw !== raw.trim()) { return false; }        // 首尾空白不算公式（$5 and $10 之类）
               }
-              if (silent) { return true; }
+              if (silent) { state.pos = end + closeStr.length; return true; }
               var html;
               try { html = window.katex.renderToString(raw.trim(), {displayMode: isDisp, throwOnError: false}); }
               catch(e) { return false; }
               var token = state.push('html_inline', '', 0);
               token.content = html;
+              token.meta = {plainText: raw.trim()};
               state.pos = end + closeStr.length;
               return true;
             });
-            // —— 单波浪线：数字→下标（H~2~O），非数字→删除线（~文字~，Typora 习惯）。
-            // 双波浪线 ~~...~~ 由 markdown-it 内置 strikethrough 处理（本规则空内容不匹配）。
+            // 单波浪线仅解析数字下标（H~2~O）；删除线由内置 ~~...~~ 规则处理。
             window.__mdit.inline.ruler.before('emphasis', 'tilde', function(state, silent){
               var start = state.pos;
-              if (state.src.charCodeAt(start) !== 0x7E) { return false; }       // '~'
+              if (state.src.charCodeAt(start) !== 0x7E || state.src[start - 1] === '~' || (start + 1 < state.posMax && state.src[start + 1] === '~')) { return false; }
               var end = state.src.indexOf('~', start + 1);
-              if (end < 0) { return false; }
+              if (end < 0 || end >= state.posMax || state.src[end - 1] === '~' || (end + 1 < state.posMax && state.src[end + 1] === '~')) { return false; }
               var content = state.src.slice(start + 1, end);
-              if (!content || content.indexOf('\n') >= 0) { return false; }
-              if (content !== content.trim()) { return false; }
-              if (silent) { return true; }
-              var tag = /^[0-9]+(?:[.,][0-9]+)?$/.test(content) ? 'sub' : 's';
-              var o = state.push(tag + '_open', tag, 1); o.markup = '~';
+              if (!/^[0-9]+(?:[.,][0-9]+)?$/.test(content)) { return false; }
+              if (silent) { state.pos = end + 1; return true; }
+              var o = state.push('sub_open', 'sub', 1); o.markup = '~';
               var t = state.push('text', '', 0); t.content = content;
-              var c = state.push(tag + '_close', tag, -1); c.markup = '~';
+              var c = state.push('sub_close', 'sub', -1); c.markup = '~';
               state.pos = end + 1;
               return true;
             });
+            window.__mdit.prepareDocument = function(text){
+              var md = window.__mdit;
+              var env = {};
+              var tokens = md.parse(text, env);
+              var outline = [];
+              var sections = [];
+              var start = 0;
+              var startSeq = -1;
+              var depth = 0;
+              function headingText(children){
+                var result = '';
+                for (var i = 0; i < children.length; i++){
+                  var token = children[i];
+                  if (token.meta && typeof token.meta.plainText === 'string'){
+                    result += token.meta.plainText;
+                  } else if (token.type === 'text' || token.type === 'code_inline' || token.type === 'emoji'){
+                    result += token.content;
+                  } else if (token.type === 'image'){
+                    result += token.children ? headingText(token.children) : token.content;
+                  } else if (token.type === 'softbreak' || token.type === 'hardbreak'){
+                    result += ' ';
+                  } else if (token.type === 'html_inline' && token.content.charAt(0) !== '<'){
+                    result += token.content;
+                  }
+                }
+                return result;
+              }
+              for (var i = 0; i < tokens.length; i++){
+                var token = tokens[i];
+                if (token.type === 'heading_open'){
+                  var seq = outline.length;
+                  if (depth === 0 && i > start){
+                    sections.push({tokens: tokens.slice(start, i), startSeq: startSeq});
+                    start = i;
+                    startSeq = -1;
+                  }
+                  if (startSeq < 0){ startSeq = seq; }
+                  var id = 'h-' + seq;
+                  token.attrSet('id', id);
+                  var inline = tokens[i + 1];
+                  outline.push({id: id, level: Number(token.tag.slice(1)), text: headingText(inline.children || [])});
+                }
+                depth += token.nesting;
+              }
+              if (start < tokens.length){ sections.push({tokens: tokens.slice(start), startSeq: startSeq}); }
+              return {tokens: tokens, env: env, outline: outline, sections: sections};
+            };
             var src = \#(mdJSON);
             var chunkMode = '\#(chunkMode)';
 
-            // —— 扫描大纲 + 按标题切分（跳过代码围栏），全量/分块两模式共用 ——
-            function cleanHeadingText(s){
-              // 去除行内 markdown 标记：粗体/斜体/行内码/删除线/链接，避免大纲显示原始语法
-              return s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-                      .replace(/[*_`~]/g, '')
-                      .replace(/\s+/g, ' ')
-                      .trim();
-            }
-            function scanAndSplit(text){
-              var lines = text.split('\n');
-              var outline = []; var sections = []; var cur = []; var inFence = false;
-              var seq = 0; var pendingSeq = -1;
-              function flush(){ if(cur.length){ sections.push({text: cur.join('\n'), startSeq: pendingSeq}); cur = []; } }
-              for (var i = 0; i < lines.length; i++){
-                var ln = lines[i];
-                if(/^\s*```/.test(ln)){ inFence = !inFence; }
-                if(!inFence){
-                  var m = /^(#{1,6})\s+(.+)$/.exec(ln);
-                  if(m){
-                    flush();
-                    outline.push({level: m[1].length, text: cleanHeadingText(m[2]), id: 'h-' + seq});
-                    pendingSeq = seq; seq++;
-                  }
-                }
-                cur.push(ln);
-              }
-              flush();
-              return {outline: outline, sections: sections};
-            }
             // 代码块精致化：语言栏 + 行号栏 + 代码主体。
             // 不拆高亮后的 DOM，而是把 gutter 与 code 并排放进 grid，避免破坏 hljs 结构。
             window.__polishCodeBlocks = function(root){
@@ -1130,16 +1066,9 @@ final class MarkdownWebView: WKWebView {
             };
             // 段渲染 + 后处理：标题 id/锚点、图片懒加载、KaTeX、代码高亮（分帧）
             window.__mdit.renderSection = function(section, container, syncHighlight){
-              var html = window.__mdit.render(section.text);
-              // 任务复选框仅展示（不可编辑）：[ ] 显示未勾选，[x]/[X] 显示勾选，均 disabled。
-              html = html.replace(/<li>\s*\[ \]\s+/g, '<li class="task"><input type="checkbox" disabled> ')
-                         .replace(/<li>\s*\[[xX]\]\s+/g, '<li class="task"><input type="checkbox" disabled checked> ');
+              var html = window.__mdit.renderer.render(section.tokens, window.__mdit.options, parsed.env);
               container.innerHTML = html;
               window.__fitTables(container);
-              var hs = container.querySelectorAll('h1,h2,h3,h4,h5,h6');
-              for (var k = 0; k < hs.length; k++){
-                if(section.startSeq >= 0){ hs[k].id = 'h-' + (section.startSeq + k); }
-              }
               container.querySelectorAll('img').forEach(function(im){ im.loading = 'lazy'; im.decoding = 'async'; });
               var codes = Array.prototype.slice.call(container.querySelectorAll('pre code'));
               if(!window.hljs){ window.__polishCodeBlocks(container); return; }
@@ -1204,8 +1133,8 @@ final class MarkdownWebView: WKWebView {
               Array.prototype.push.apply(window.__heads, Array.prototype.slice.call(container.querySelectorAll('h1,h2,h3,h4,h5,h6')));
             }
 
-            var scan = scanAndSplit(src);
-            window.__outline = scan.outline;
+            var parsed = window.__mdit.prepareDocument(src);
+            window.__outline = parsed.outline;
             window.__chunked = (chunkMode === 'auto') ? (src.length > 250000) : false;
 
             if(!window.__chunked){
@@ -1213,7 +1142,7 @@ final class MarkdownWebView: WKWebView {
               window.__sections = null;
               window.__renderAll = function(){ return true; };
               var content = document.getElementById('content');
-              window.__mdit.renderSection({text: src, startSeq: 0}, content, false);
+              window.__mdit.renderSection({tokens: parsed.tokens, startSeq: 0}, content, false);
               window.__heads = Array.prototype.slice.call(content.querySelectorAll('h1,h2,h3,h4,h5,h6'));
               if(window.__recomputeHeads){ window.__recomputeHeads(); }
               if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.outline){
@@ -1224,7 +1153,7 @@ final class MarkdownWebView: WKWebView {
               window.__restoreProgress && window.__restoreProgress();
             } else {
               // —— 分块懒渲染（大文档）：初始 6 段，滚动渐进加载 ——
-              window.__sections = scan.sections;
+              window.__sections = parsed.sections;
               window.__renderedUpTo = -1;
               window.__renderBatch = function(count){
                 var end = Math.min(window.__renderedUpTo + count, window.__sections.length - 1);
