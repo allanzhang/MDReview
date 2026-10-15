@@ -34,39 +34,45 @@ body {
 #content h3 { font-size: 1.08em; margin: 0.7em 0 0.25em; }
 #content h4 { font-size: 1.05em; }
 #content p { margin: 0.7em 0; }
-#content a { color: #2563eb; text-decoration: none; }
-#content a:hover { text-decoration: underline; }
+#content a { color: #0969da; text-decoration: none; text-underline-offset: 0.18em; }
+#content a:hover, #content a:focus-visible { text-decoration: underline; }
 #content code {
   font-family: Consolas, "SF Mono", ui-monospace, Menlo, monospace;
-  font-size: 0.88em;
-  font-weight: 500;
-  color: #24292e;
-  background: #e5e8eb;
-  padding: 0.15em 0.4em;
-  border-radius: 5px;
+  font-weight: 400;
 }
+#content :where(:not(pre):not(.code-body)) > code:not(.hljs) {
+  font-family: Consolas, "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 0.88em;
+  font-weight: 400;
+  color: #24292e;
+  background: #f3f4f5;
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+#content a > code:not(.hljs) { color: inherit; background: transparent; }
 #content pre {
-  background: #e7eaed;
+  background: #fafafa;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 5px;
   overflow: hidden;
-  border: 1px solid #d8dce0;
+  border: 1px solid #e8e8e8;
+  line-height: 1.6;
 }
 #content pre.code-block {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr;
   width: 100%;
   max-width: 100%;
 }
 #content pre.code-block .code-lang {
   grid-column: 1 / -1;
-  padding: 8px 14px;
-  background: #dfe3e7;
-  border-bottom: 1px solid #d8dce0;
-  color: #606874;
-  font-size: 0.72em;
-  font-weight: 600;
+  padding: 5px 64px 0 12px;
+  background: transparent;
+  border-bottom: none;
+  color: #6e7781;
+  font-size: 0.68em;
+  font-weight: 400;
   text-transform: uppercase;
   user-select: none;
   cursor: pointer;
@@ -76,24 +82,11 @@ body {
 #content pre.code-block.collapsed .code-lang::before { content: "▸ " attr(data-lang) " · " attr(data-lines) " lines"; }
 #content pre.code-block.collapsed .code-gutter,
 #content pre.code-block.collapsed .code-body { display: none; }
-#content pre.code-block .code-gutter {
-  padding: 14px 10px 14px 0;
-  min-width: 38px;
-  text-align: right;
-  color: #767e88;
-  background: #dfe3e7;
-  border-right: 1px solid #d8dce0;
-  font-family: Consolas, "SF Mono", ui-monospace, Menlo, monospace;
-  font-size: 0.8em;
-  line-height: 1.7;
-  white-space: pre;
-  overflow: hidden;
-  user-select: none;
-}
+#content pre.code-block .code-gutter { display: none; }
 #content pre.code-block .code-body {
   min-width: 0;
   width: 100%;
-  padding: 14px 16px;
+  padding: 6px 12px 12px;
   overflow-x: hidden;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -103,21 +96,24 @@ body {
 #content pre.code-block { position: relative; }
 #content pre.code-block .code-copy {
   position: absolute;
-  top: 7px;
+  top: 4px;
   right: 8px;
   z-index: 2;
   pointer-events: auto;
-  padding: 2px 9px;
-  border: 1px solid #e3e6e8;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #6b7280;
+  padding: 2px 5px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: #6e7781;
   font-size: 0.7em;
-  font-weight: 600;
+  font-weight: 400;
+  opacity: 0;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
-#content pre.code-block .code-copy:hover { background: #f3f4f6; color: #111827; }
+#content pre.code-block:hover .code-copy,
+#content pre.code-block:focus-within .code-copy { opacity: 1; }
+#content pre.code-block .code-copy:hover { background: #eeeeee; color: #24292f; }
 #content pre:not(.code-block) { display: block; padding: 14px 16px; overflow-x: hidden; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 #content pre:not(.code-block) code { background: none; padding: 0; font-size: 0.85em; white-space: pre-wrap; overflow-wrap: anywhere; }
 #content ul, #content ol { padding-left: 1.4em; }
@@ -259,13 +255,12 @@ body.theme-dark #content h1, body.theme-dark #content h2,
 body.theme-dark #content h3, body.theme-dark #content h4,
 body.theme-dark #content h5, body.theme-dark #content h6 { color: #ececec; }
 body.theme-dark #content a { color: #75beff; }
-body.theme-dark #content code { background: #404040; }
-body.theme-dark #content code { color: #e6e6e6; }
-body.theme-dark #content pre { background: #1d1d1d; border-color: #3d3d3d; }
-body.theme-dark #content pre.code-block .code-lang,
-body.theme-dark #content pre.code-block .code-gutter { background: #242424; border-color: #3d3d3d; color: #8a8a8a; }
-body.theme-dark #content pre.code-block .code-copy { background: #323232; border-color: #3f3f3f; color: #a8a8a8; }
-body.theme-dark #content pre.code-block .code-copy:hover { background: #3b3b3b; color: #ffffff; }
+body.theme-dark #content :where(:not(pre):not(.code-body)) > code:not(.hljs) { background: #303030; color: #e6e6e6; }
+body.theme-dark #content a > code:not(.hljs) { color: inherit; background: transparent; }
+body.theme-dark #content pre { background: #242424; border-color: #363636; }
+body.theme-dark #content pre.code-block .code-lang { color: #999fa7; }
+body.theme-dark #content pre.code-block .code-copy { color: #a8a8a8; }
+body.theme-dark #content pre.code-block .code-copy:hover { background: #333333; color: #ffffff; }
 body.theme-dark #content blockquote { background: #2e2e2e; border-color: #3a3a3a; color: #a8a8a8; }
 body.theme-dark #content table { border-color: #3a3a3a; }
 body.theme-dark #content th, body.theme-dark #content td { border-color: #3a3a3a; }
@@ -291,10 +286,10 @@ body.theme-dark #content ::selection { background: #264f78; }
   body { color: #1f2328 !important; }
   #content h1, #content h2 { border-color: #d0d7de !important; }
   #content a { color: #0969da !important; }
-  #content code { background: #eff1f3 !important; }
-  #content pre { background: #f6f8fa !important; border-color: #d0d7de !important; }
-  #content pre.code-block .code-lang,
-  #content pre.code-block .code-gutter { background: #f0f2f4 !important; border-color: #d0d7de !important; }
+  #content :where(:not(pre):not(.code-body)) > code:not(.hljs) { background: #f3f4f5 !important; }
+  #content pre { background: #fafafa !important; border-color: #e8e8e8 !important; }
+  #content pre.code-block .code-lang { background: transparent !important; }
+  #content pre.code-block .code-copy { display: none; }
   #content blockquote { background: #f6f8fa !important; color: #6b7280 !important; }
   #content table { border-color: #e0e0e0 !important; }
   #content th, #content td { border-color: #e0e0e0 !important; }

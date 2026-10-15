@@ -90,6 +90,16 @@ function runCodeFoldAndDropContractTests() {
   const css = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'Resources', 'reader.css'), 'utf8');
   const failures = [];
 
+  if (!css.includes('#content :where(:not(pre):not(.code-body)) > code:not(.hljs)')) {
+    failures.push('inline code styling must exclude highlighted block code');
+  }
+  if (!css.includes('#content a > code:not(.hljs) { color: inherit; background: transparent; }')) {
+    failures.push('linked inline code must retain link affordance');
+  }
+  if (!css.includes('pre.code-block:focus-within .code-copy')) {
+    failures.push('quiet copy control must remain visible on keyboard focus');
+  }
+
   const polishStart = renderer.indexOf('window.__polishCodeBlocks');
   const polishEnd = renderer.indexOf('window.__mdit.renderSection', polishStart);
   if (polishStart < 0 || polishEnd < 0) {
