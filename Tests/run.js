@@ -169,6 +169,26 @@ function runCodeFoldAndDropContractTests() {
   console.log('ok - code fold and drop contract');
 }
 
+function runReaderSelectionContractTests() {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'Resources', 'reader.css'), 'utf8');
+  const failures = [];
+
+  // 选区颜色必须两种主题都显式声明背景和文字色；回落到系统强调色时在石墨灰外观下几乎不可辨。
+  if (!/#content ::selection \{ background: #[0-9a-f]{6}; color: #[0-9a-f]{6}; \}/.test(css)) {
+    failures.push('reader.css must define a light-mode selection background and explicit text color');
+  }
+  if (!/body\.theme-dark #content ::selection \{ background: #[0-9a-f]{6}; color: #[0-9a-f]{6}; \}/.test(css)) {
+    failures.push('reader.css must define a dark-mode selection background and explicit text color');
+  }
+
+  if (failures.length > 0) {
+    console.error('not ok - reader selection contract');
+    for (const failure of failures) console.error(`  - ${failure}`);
+    process.exit(1);
+  }
+  console.log('ok - reader selection contract');
+}
+
 function runSingleWindowSceneTests() {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'MDReviewApp.swift'), 'utf8');
   const contentSource = fs.readFileSync(path.join(__dirname, '..', 'Sources', 'ContentView.swift'), 'utf8');
@@ -258,6 +278,7 @@ runDocStateTests();
 runMarkdownFileDropTests();
 runSourceLineIndexTests();
 runCodeFoldAndDropContractTests();
+runReaderSelectionContractTests();
 runViewStructureContractTests();
 runSingleWindowSceneTests();
 

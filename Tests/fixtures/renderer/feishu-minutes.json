@@ -1,0 +1,51 @@
+{
+  "description": "Feishu minutes export: space-padded strong delimiters (`**  text**`) render as bold via the app's strong_loose rule; everything else stays CommonMark.",
+  "profile": "app",
+  "cases": [
+    {
+      "name": "link followed by space-padded bold title",
+      "markdown": "[00:09](https://doubleeagle.feishu.cn/minutes/obcna156id8ss77m6iwc1ex8?t=9000)**  外销库存查询规则及AI需求排期相关沟通**",
+      "expected": "<a href=\"https://doubleeagle.feishu.cn/minutes/obcna156id8ss77m6iwc1ex8?t=9000\">00:09</a><strong>  外销库存查询规则及AI需求排期相关沟通</strong>"
+    },
+    {
+      "name": "space-padded bold at line start",
+      "markdown": "**  飞书群产品排期表处理方案沟通确认**",
+      "expected": "<strong>  飞书群产品排期表处理方案沟通确认</strong>"
+    },
+    {
+      "name": "space padding on both sides stays inside the strong element",
+      "markdown": "** 文本 **",
+      "expected": "<strong> 文本 </strong>"
+    },
+    {
+      "name": "inner inline syntax is still parsed",
+      "markdown": "** 内含 [链接](https://a.b) 的文本**",
+      "expected": "<strong> 内含 <a href=\"https://a.b\">链接</a> 的文本</strong>"
+    },
+    {
+      "name": "unclosed space-padded bold stays literal",
+      "markdown": "** 未闭合的粗体",
+      "expected": "** 未闭合的粗体"
+    },
+    {
+      "name": "closing-side padding alone stays CommonMark-literal",
+      "markdown": "**文本 **",
+      "expected": "**文本 **"
+    },
+    {
+      "name": "ordinary bold is untouched",
+      "markdown": "普通 **粗体** 文本",
+      "expected": "普通 <strong>粗体</strong> 文本"
+    },
+    {
+      "name": "strong delimiters inside code spans are untouched",
+      "markdown": "`** 代码里的**`",
+      "expected": "<code>** 代码里的**</code>"
+    },
+    {
+      "name": "unpaired space-padded opener does not swallow later text",
+      "markdown": "A ** 不是配对 ** B ** 也不闭合",
+      "expected": "A <strong> 不是配对 </strong> B ** 也不闭合"
+    }
+  ]
+}

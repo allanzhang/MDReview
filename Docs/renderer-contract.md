@@ -31,11 +31,12 @@
    - `math`：`$...$` / `$$...$$` 交给 KaTeX，闭合符遵守解析范围及转义。
    - `tilde`：独立单波浪线中的数字 `H~2~O` 转下标；其他单波浪线保留原文，不借用双波浪线。
    - `task_lists`：解析阶段识别列表首段的任务标记，复选框只读；转义或实体产生的标记保留原文。
+   - `strong_loose`：开定界符 `**` 后紧跟空白的粗体写法（飞书等导出常见）在同一行内存在闭合 `**` 时按粗体渲染；内容为空白或缺少闭合时保留原文。闭合符前面的空白不单独触发该规则。
    - `validateLink`：放行合法 `data:image/*`，继续拦截 `javascript:`、`vbscript:`、`file:`。
 
 ## 规则优先级
 
-- 粗体、斜体、链接、代码等由 markdown-it 的标准规则解析，不再使用标点粗体兜底。
+- 粗体、斜体、链接、代码等由 markdown-it 的标准规则解析，不再使用标点粗体兜底；仅 `strong_loose` 对开定界符后的空白容错。
 - 自定义行内规则必须遵守 `posMax`；静默探测返回成功时也必须推进解析位置。
 - `^[` 入口优先作为行内脚注处理，脚注正文仍支持上标、下标及数学公式。
 - 正文、大纲与章节分块复用同一次解析的 tokens 和 env，只在安全顶层块边界切分；标题 ID 在渲染前统一生成。
@@ -43,11 +44,12 @@
 
 ## CommonMark 已知差异
 
-`Tests/fixtures/commonmark/divergences.json` 是专用 CommonMark profile 的允许差异清单，当前有 3 条等价 HTML 序列化差异；App profile 启用的插件扩展另由回归测试覆盖，不能用此清单代表全部 App 行为。
+`Tests/fixtures/commonmark/divergences.json` 是专用 CommonMark profile 的允许差异清单，当前有 4 条：3 条等价 HTML 序列化差异，1 条 App 强调容错偏差；App profile 启用的插件扩展另由回归测试覆盖，不能用此清单代表全部 App 行为。
 
 | Example | 类型 | 说明 |
 |---|---|---|
 | 218 / 239 / 240 | HTML 序列化 | markdown-it 的空 blockquote 不输出内部换行；浏览器渲染等价。 |
+| 379 | 强调容错 | `** foo bar**` 在 App 中渲染为粗体（`strong_loose`），用于兼容飞书等导出的纪要；标准 CommonMark 保留字面量。 |
 
 新增偏差必须同时满足：测试实际输出与文档说明一致、修改契约、说明为什么不能回到 CommonMark 行为。未登记的偏差会导致 CI 失败。
 

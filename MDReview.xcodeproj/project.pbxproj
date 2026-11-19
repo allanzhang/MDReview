@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		02D703B415A1D865CED64580 /* github-dark.min.css in Resources */ = {isa = PBXBuildFile; fileRef = FE73EDF8195DF23EC94C0D4E /* github-dark.min.css */; };
 		048FE271FDC5D0FAD6AA0EA0 /* KaTeX_Size3-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = EB4D6F6104551C43345B3C40 /* KaTeX_Size3-Regular.woff2 */; };
+		08D5CE85DCA73D99C0EA0060 /* CascadiaMono-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = C1099EF49E2BB83F99976DF7 /* CascadiaMono-Regular.woff2 */; };
 		0B28090B27BF3FC5C89BA007 /* highlight.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 6E546F0900486F133CC182CF /* highlight.min.js */; };
 		1973DB96AA446E838E40C7A0 /* KaTeX_Typewriter-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = 297FEE949C371F6AB57F52BB /* KaTeX_Typewriter-Regular.woff2 */; };
 		1AAD930527E80B4A4CF9D45F /* md-plugins.min.js in Resources */ = {isa = PBXBuildFile; fileRef = BF4B47C5E29D261D90001B47 /* md-plugins.min.js */; };
@@ -20,6 +21,7 @@
 		39CD909EF85392E2A297DB7F /* MainMenuLocalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63F2206F5B3E64043C36A51B /* MainMenuLocalizer.swift */; };
 		3AB192E0375357F0EC3AEFF0 /* ICON.png in Resources */ = {isa = PBXBuildFile; fileRef = DCF8F2F2715B2292AF2654F1 /* ICON.png */; };
 		3B5F09713D5B6C54B05683E7 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87432709E644475045AA683F /* AboutView.swift */; };
+		5022FF456522C0989BE69C4D /* OFL-CascadiaMono.txt in Resources */ = {isa = PBXBuildFile; fileRef = 29E9710726E2E6C8B1CAD3D9 /* OFL-CascadiaMono.txt */; };
 		51B4541DEA7C5B20E3DB21FE /* SourceLineIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 381A9E55B8B225A9F1499363 /* SourceLineIndex.swift */; };
 		52FA01A1DCD87ABE8C0CD7BD /* KaTeX_Main-BoldItalic.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = DC3487465D1C5336012C4EEE /* KaTeX_Main-BoldItalic.woff2 */; };
 		54DD33801BBC3B35CA64F8A1 /* RecentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAE9A53CCD831C476B653526 /* RecentView.swift */; };
@@ -33,6 +35,7 @@
 		80F6A8C6EC983F03A056FE0A /* KaTeX_Main-Bold.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = F897314445FB4D270ECC9443 /* KaTeX_Main-Bold.woff2 */; };
 		87748E2A45EB0C8A06C5FD78 /* KaTeX_Size2-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = C10C9BC090B575DBD6C47D94 /* KaTeX_Size2-Regular.woff2 */; };
 		8D679CBAB297B6E6763CB7AB /* KaTeX_AMS-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = 162CCDA1B0E0378E53331F65 /* KaTeX_AMS-Regular.woff2 */; };
+		95EA49558BAF576A34B9C45C /* CascadiaMono-Bold.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = BBF625F5361225A1AAB627D6 /* CascadiaMono-Bold.woff2 */; };
 		97618CE3C2F38F2A5041959D /* AboutLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E9E12531BA1129C25717C8A /* AboutLinks.swift */; };
 		9AE6C32BC5B0ADD3FAF9C36F /* UpdateIntegrity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D418D8418AAE76E0C0484C /* UpdateIntegrity.swift */; };
 		9FC8F3D20D84BB68FABA673D /* katex.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 57DFF9067B7CB4686051BA5A /* katex.min.js */; };
@@ -66,6 +69,7 @@
 		1FBEE2877B7E696C7489B036 /* KaTeX_Fraktur-Bold.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Fraktur-Bold.woff2"; sourceTree = "<group>"; };
 		28EC663D01BA2F16CF21817C /* katex.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = katex.min.css; sourceTree = "<group>"; };
 		297FEE949C371F6AB57F52BB /* KaTeX_Typewriter-Regular.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Typewriter-Regular.woff2"; sourceTree = "<group>"; };
+		29E9710726E2E6C8B1CAD3D9 /* OFL-CascadiaMono.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OFL-CascadiaMono.txt"; sourceTree = "<group>"; };
 		2CAF6CF3B6E11C0EBAA733DC /* katex-auto-render.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "katex-auto-render.min.js"; sourceTree = "<group>"; };
 		2FEF0D93A834D84C318FC638 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		30134CDC9497B6D9FEB1707B /* MarkdownFileDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownFileDrop.swift; sourceTree = "<group>"; };
@@ -96,7 +100,9 @@
 		AB4E8B53C6BE0AD23E9526A0 /* KaTeX_Math-BoldItalic.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Math-BoldItalic.woff2"; sourceTree = "<group>"; };
 		B426F15E06B9964ED924DE5B /* KaTeX_Size4-Regular.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Size4-Regular.woff2"; sourceTree = "<group>"; };
 		B88D9F2419DB3ACA21C204E9 /* reader.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = reader.css; sourceTree = "<group>"; };
+		BBF625F5361225A1AAB627D6 /* CascadiaMono-Bold.woff2 */ = {isa = PBXFileReference; path = "CascadiaMono-Bold.woff2"; sourceTree = "<group>"; };
 		BF4B47C5E29D261D90001B47 /* md-plugins.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "md-plugins.min.js"; sourceTree = "<group>"; };
+		C1099EF49E2BB83F99976DF7 /* CascadiaMono-Regular.woff2 */ = {isa = PBXFileReference; path = "CascadiaMono-Regular.woff2"; sourceTree = "<group>"; };
 		C10C9BC090B575DBD6C47D94 /* KaTeX_Size2-Regular.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Size2-Regular.woff2"; sourceTree = "<group>"; };
 		CAACBADB0D9ACC1D73DB3A2F /* KaTeX_Math-Italic.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Math-Italic.woff2"; sourceTree = "<group>"; };
 		CEEB2D58A074D416F62622C4 /* KaTeX_Main-Italic.woff2 */ = {isa = PBXFileReference; path = "KaTeX_Main-Italic.woff2"; sourceTree = "<group>"; };
@@ -204,9 +210,20 @@
 				BF4B47C5E29D261D90001B47 /* md-plugins.min.js */,
 				820C57F784C6B3AE26E486B9 /* mermaid.min.js */,
 				B88D9F2419DB3ACA21C204E9 /* reader.css */,
+				EA685E2FC596A15E7B4DE2E8 /* fonts */,
 				FDC97A8F9323D28F31DD78D5 /* katex */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		EA685E2FC596A15E7B4DE2E8 /* fonts */ = {
+			isa = PBXGroup;
+			children = (
+				BBF625F5361225A1AAB627D6 /* CascadiaMono-Bold.woff2 */,
+				C1099EF49E2BB83F99976DF7 /* CascadiaMono-Regular.woff2 */,
+				29E9710726E2E6C8B1CAD3D9 /* OFL-CascadiaMono.txt */,
+			);
+			path = fonts;
 			sourceTree = "<group>";
 		};
 		FDC97A8F9323D28F31DD78D5 /* katex */ = {
@@ -275,6 +292,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				CF21B82584F3DDC8E77281DA /* Assets.xcassets in Resources */,
+				95EA49558BAF576A34B9C45C /* CascadiaMono-Bold.woff2 in Resources */,
+				08D5CE85DCA73D99C0EA0060 /* CascadiaMono-Regular.woff2 in Resources */,
 				3AB192E0375357F0EC3AEFF0 /* ICON.png in Resources */,
 				8D679CBAB297B6E6763CB7AB /* KaTeX_AMS-Regular.woff2 in Resources */,
 				DCA86E5B7A1E1D70C44214B5 /* KaTeX_Caligraphic-Bold.woff2 in Resources */,
@@ -297,6 +316,7 @@
 				211CDCCC0308A70A0029F5A8 /* KaTeX_Size4-Regular.woff2 in Resources */,
 				1973DB96AA446E838E40C7A0 /* KaTeX_Typewriter-Regular.woff2 in Resources */,
 				C37FDEEE0F455F35C8ECC9E2 /* Localizable.xcstrings in Resources */,
+				5022FF456522C0989BE69C4D /* OFL-CascadiaMono.txt in Resources */,
 				02D703B415A1D865CED64580 /* github-dark.min.css in Resources */,
 				DCCA7F66C75E374E8BAC54BB /* github.min.css in Resources */,
 				0B28090B27BF3FC5C89BA007 /* highlight.min.js in Resources */,

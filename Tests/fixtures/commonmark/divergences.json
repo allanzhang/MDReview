@@ -16,5 +16,11 @@
     "kind": "html-serialization",
     "reason": "markdown-it emits an empty blockquote without an internal newline; browsers render both forms identically.",
     "actual": "<blockquote></blockquote>\n"
+  },
+  {
+    "example": 379,
+    "kind": "app-emphasis-compat",
+    "reason": "The app's strong_loose rule accepts a space-padded strong opener (`** foo bar**`) so Feishu-exported minutes render as bold; standard CommonMark keeps the asterisks literal.",
+    "actual": "<p><strong> foo bar</strong></p>\n"
   }
 ]

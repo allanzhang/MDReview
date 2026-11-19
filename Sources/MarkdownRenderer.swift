@@ -431,7 +431,20 @@ final class MarkdownWebView: WKWebView {
     /// mermaid.min.js 较大（约 3.5MB），**按需内联**：仅当文档含 mermaid 代码块才注入，普通文档零负担。
     private static let bundled: (readerCSS: String, katexCSS: String, md: String, kx: String, ar: String, footnote: String, hljs: String, hljsLight: String, hljsDark: String, mermaid: String, mdPlugins: String) = {
         let bundle = Bundle.main
-        let readerCSS = (try? String(contentsOf: bundle.url(forResource: "reader", withExtension: "css")!)) ?? ""
+        var readerCSS = (try? String(contentsOf: bundle.url(forResource: "reader", withExtension: "css")!)) ?? ""
+        // CSS 内联进 HTML 后相对 url() 会按文档目录解析；内置字体改为 data URL，
+        // 不依赖 file:// 跨目录读取，导出的自包含 HTML 也带上字体。
+        for (placeholder, resource) in [
+            ("url(mdreview-fonts/CascadiaMono-Regular.woff2)", "CascadiaMono-Regular"),
+            ("url(mdreview-fonts/CascadiaMono-Bold.woff2)", "CascadiaMono-Bold")
+        ] {
+            if let url = bundle.url(forResource: resource, withExtension: "woff2"),
+               let data = try? Data(contentsOf: url) {
+                readerCSS = readerCSS.replacingOccurrences(
+                    of: placeholder,
+                    with: "url(data:font/woff2;base64,\(data.base64EncodedString()))")
+            }
+        }
         var kcss = (try? String(contentsOf: bundle.url(forResource: "katex.min", withExtension: "css")!)) ?? ""
         if let fontBase = bundle.url(forResource: "KaTeX_AMS-Regular", withExtension: "woff2")?
             .deletingLastPathComponent().absoluteString {
@@ -946,6 +959,33 @@ final class MarkdownWebView: WKWebView {
               var t = state.push('text', '', 0); t.content = content;
               var c = state.push('sub_close', 'sub', -1); c.markup = '~';
               state.pos = end + 1;
+              return true;
+            });
+            // —— 宽松粗体：飞书等工具导出的纪要常见 `**  文本**`，开定界符后紧跟空白，
+            // 不满足 CommonMark 的左翼规则，标准解析会把 `**` 当字面量输出（spec 379）。
+            // 仅在“开定界符后紧跟空白、同一行内存在闭合 `**`”时接管配对，其余写法仍交给
+            // 标准 emphasis 规则；该偏差在 Tests/fixtures/commonmark/divergences.json 登记。
+            window.__mdit.inline.ruler.before('emphasis', 'strong_loose', function(state, silent){
+              var start = state.pos, posMax = state.posMax, src = state.src;
+              if (src.charCodeAt(start) !== 0x2A || src.charCodeAt(start + 1) !== 0x2A) { return false; }
+              var after = start + 2;
+              if (after >= posMax || (src[after] !== ' ' && src[after] !== '\t')) { return false; }
+              var end = after;
+              while (end + 1 < posMax) {
+                var ch = src[end];
+                if (ch === '\n') { return false; }
+                if (ch === '\\') { end += 2; continue; }
+                if (ch === '*' && src[end + 1] === '*') { break; }
+                end++;
+              }
+              if (end + 1 >= posMax) { return false; }
+              var inner = src.slice(after, end);
+              if (!inner.trim()) { return false; }
+              if (silent) { state.pos = end + 2; return true; }
+              var open = state.push('strong_open', 'strong', 1); open.markup = '**';
+              state.md.inline.parse(inner, state.md, state.env, state.tokens);
+              var close = state.push('strong_close', 'strong', -1); close.markup = '**';
+              state.pos = end + 2;
               return true;
             });
             window.__mdit.prepareDocument = function(text){

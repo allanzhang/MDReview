@@ -6,7 +6,8 @@ const { runFixtureFile } = require('./lib/fixture-runner');
 const fixtures = [
   'punct-strong.json',
   'historical-issues.json',
-  'real-world.json'
+  'real-world.json',
+  'feishu-minutes.json'
 ];
 
 let count = 0;
